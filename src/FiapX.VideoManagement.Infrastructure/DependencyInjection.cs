@@ -2,7 +2,6 @@ using FiapX.VideoManagement.Application.Abstractions;
 using FiapX.VideoManagement.Application.Common;
 using FiapX.VideoManagement.Application.Videos;
 using FiapX.VideoManagement.Infrastructure.Cache;
-using FiapX.VideoManagement.Infrastructure.Identity;
 using FiapX.VideoManagement.Infrastructure.Persistence;
 using FiapX.VideoManagement.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -27,7 +26,6 @@ public static class DependencyInjection
         services.AddScoped<IVideoDataStore, EfVideoDataStore>();
         services.AddScoped<VideoService>();
         services.AddSingleton<IClock, SystemClock>();
-        services.AddScoped<ICurrentUser, DevelopmentCurrentUser>();
 
         var redisConnectionString = configuration["REDIS_CONNECTION_STRING"] ?? "localhost:6379";
         var cacheTtlSeconds = configuration.GetValue("CACHE_TTL_SECONDS", 30);

@@ -56,3 +56,6 @@ CodeCoverage/
 TestResult.xml
 nunit-*.xml
 /.vs/FiapX.VideoManagementService
+.vs/
+bin/
+obj/

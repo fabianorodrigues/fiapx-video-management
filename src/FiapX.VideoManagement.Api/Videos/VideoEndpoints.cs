@@ -6,7 +6,9 @@ public static class VideoEndpoints
 {
     public static IEndpointRouteBuilder MapVideoEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/videos", async (
+        var videos = endpoints.MapGroup("/videos").RequireAuthorization();
+
+        videos.MapPost("", async (
             CreateVideoRequest request,
             VideoService service,
             CancellationToken cancellationToken) =>
@@ -15,7 +17,7 @@ public static class VideoEndpoints
             return Results.Created($"/videos/{response.VideoId}", response);
         });
 
-        endpoints.MapGet("/videos", async (
+        videos.MapGet("", async (
             VideoService service,
             CancellationToken cancellationToken) =>
         {
@@ -23,7 +25,7 @@ public static class VideoEndpoints
             return Results.Ok(response);
         });
 
-        endpoints.MapGet("/videos/{videoId:guid}", async (
+        videos.MapGet("/{videoId:guid}", async (
             Guid videoId,
             VideoService service,
             CancellationToken cancellationToken) =>
@@ -32,7 +34,7 @@ public static class VideoEndpoints
             return Results.Ok(response);
         });
 
-        endpoints.MapGet("/videos/{videoId:guid}/download", async (
+        videos.MapGet("/{videoId:guid}/download", async (
             Guid videoId,
             VideoService service,
             CancellationToken cancellationToken) =>

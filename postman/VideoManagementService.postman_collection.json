@@ -2,13 +2,114 @@
   "info": {
     "_postman_id": "7a14d2fe-972c-44f7-8f22-d244e6247427",
     "name": "FIAP X - VideoManagementService",
-    "description": "Runner collection for VideoManagementService local validation. It creates a video, uploads a sample payload using the returned presigned URL, checks MinIO, and validates read/error scenarios.",
+    "description": "Runner collection for VideoManagementService local validation. It obtains a Keycloak access token, creates a video, uploads a sample payload using the returned presigned URL, checks MinIO, and validates read/error scenarios.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
   },
   "item": [
     {
       "name": "01 - Happy Path",
       "item": [
+        {
+          "name": "00 - Login Alice In Keycloak",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Keycloak returns 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.environment.set('accessToken', json.access_token);",
+                  "pm.environment.set('aliceAccessToken', json.access_token);",
+                  "",
+                  "function decodeJwtPayload(token) {",
+                  "    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "    const padded = payload.padEnd(payload.length + (4 - payload.length % 4) % 4, '=');",
+                  "    return JSON.parse(atob(padded));",
+                  "}",
+                  "",
+                  "const claims = decodeJwtPayload(json.access_token);",
+                  "pm.environment.set('authenticatedUserId', claims.sub);",
+                  "pm.environment.set('authenticatedEmail', claims.email);",
+                  "pm.environment.set('aliceUserId', claims.sub);",
+                  "",
+                  "pm.test('Access token has required claims for the API', function () {",
+                  "    const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];",
+                  "    pm.expect(claims.sub).to.be.a('string').and.not.empty;",
+                  "    pm.expect(claims.email).to.eql(pm.environment.get('aliceEmail'));",
+                  "    pm.expect(claims.iss).to.eql(pm.environment.get('keycloakBaseUrl') + '/realms/fiapx');",
+                  "    pm.expect(aud).to.include(pm.environment.get('jwtAudience'));",
+                  "    pm.expect(claims.exp).to.be.a('number');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{keycloakClientId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "{{aliceUsername}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{alicePassword}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloakBaseUrl}}/realms/fiapx/protocol/openid-connect/token",
+              "host": [
+                "{{keycloakBaseUrl}}"
+              ],
+              "path": [
+                "realms",
+                "fiapx",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        },
         {
           "name": "01 - Health",
           "event": [
@@ -74,11 +175,11 @@
                   "});",
                   "",
                   "const json = pm.response.json();",
-                  "const devUserId = pm.environment.get('devUserId');",
+                  "const authenticatedUserId = pm.environment.get('authenticatedUserId');",
                   "const minioPublicEndpoint = pm.environment.get('minioPublicEndpoint').replace(/\\/$/, '');",
                   "const minioBucket = pm.environment.get('minioBucket');",
-                  "const expectedObjectKey = `videos/${devUserId}/${json.videoId}/original.mp4`;",
-                  "const expectedResultObjectKey = `results/${devUserId}/${json.videoId}/resultado.zip`;",
+                  "const expectedObjectKey = `videos/${authenticatedUserId}/${json.videoId}/original.mp4`;",
+                  "const expectedResultObjectKey = `results/${authenticatedUserId}/${json.videoId}/resultado.zip`;",
                   "const uploadedObjectUrl = `${minioPublicEndpoint}/${minioBucket}/${expectedObjectKey}`;",
                   "",
                   "pm.environment.set('videoId', json.videoId);",
@@ -268,12 +369,12 @@
                   "",
                   "const videos = pm.response.json();",
                   "const videoId = pm.environment.get('videoId');",
-                  "const devUserId = pm.environment.get('devUserId');",
+                  "const authenticatedUserId = pm.environment.get('authenticatedUserId');",
                   "",
                   "pm.test('List contains created video and only current user', function () {",
                   "    pm.expect(videos).to.be.an('array');",
                   "    pm.expect(videos.some(v => v.videoId === videoId)).to.eql(true);",
-                  "    pm.expect(videos.every(v => v.userId === devUserId)).to.eql(true);",
+                  "    pm.expect(videos.every(v => v.userId === authenticatedUserId)).to.eql(true);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -345,7 +446,7 @@
                   "",
                   "pm.test('Detail matches created video contract', function () {",
                   "    pm.expect(video.videoId).to.eql(pm.environment.get('videoId'));",
-                  "    pm.expect(video.userId).to.eql(pm.environment.get('devUserId'));",
+                  "    pm.expect(video.userId).to.eql(pm.environment.get('authenticatedUserId'));",
                   "    pm.expect(video.originalFileName).to.eql(pm.environment.get('videoFileName'));",
                   "    pm.expect(video.originalObjectKey).to.eql(pm.environment.get('expectedObjectKey'));",
                   "    pm.expect(video.resultObjectKey).to.eql(pm.environment.get('expectedResultObjectKey'));",
@@ -586,6 +687,228 @@
                 "videos",
                 "{{missingVideoId}}",
                 "download"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - Security And Isolation",
+      "item": [
+        {
+          "name": "13 - Get Videos Without JWT Returns 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('GET /videos without JWT returns 401', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "14 - Login Bob In Keycloak",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Keycloak returns 200 for Bob', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.environment.set('bobAccessToken', json.access_token);",
+                  "",
+                  "function decodeJwtPayload(token) {",
+                  "    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "    const padded = payload.padEnd(payload.length + (4 - payload.length % 4) % 4, '=');",
+                  "    return JSON.parse(atob(padded));",
+                  "}",
+                  "",
+                  "const claims = decodeJwtPayload(json.access_token);",
+                  "pm.environment.set('bobUserId', claims.sub);",
+                  "",
+                  "pm.test('Bob access token has required claims for the API', function () {",
+                  "    const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];",
+                  "    pm.expect(claims.sub).to.be.a('string').and.not.empty;",
+                  "    pm.expect(claims.email).to.eql(pm.environment.get('bobEmail'));",
+                  "    pm.expect(claims.iss).to.eql(pm.environment.get('keycloakBaseUrl') + '/realms/fiapx');",
+                  "    pm.expect(aud).to.include(pm.environment.get('jwtAudience'));",
+                  "    pm.expect(claims.exp).to.be.a('number');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{keycloakClientId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "{{bobUsername}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{bobPassword}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloakBaseUrl}}/realms/fiapx/protocol/openid-connect/token",
+              "host": [
+                "{{keycloakBaseUrl}}"
+              ],
+              "path": [
+                "realms",
+                "fiapx",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "15 - Bob List Does Not Include Alice Video",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Bob list returns 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const videos = pm.response.json();",
+                  "const aliceVideoId = pm.environment.get('videoId');",
+                  "const bobUserId = pm.environment.get('bobUserId');",
+                  "",
+                  "pm.test('Bob list does not reveal Alice video', function () {",
+                  "    pm.expect(videos).to.be.an('array');",
+                  "    pm.expect(videos.some(v => v.videoId === aliceVideoId)).to.eql(false);",
+                  "    pm.expect(videos.every(v => v.userId === bobUserId)).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bobAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "16 - Bob Get Alice Video Returns 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Bob cross-user detail returns 404', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test('Cross-user access does not reveal resource existence', function () {",
+                  "    const problem = pm.response.json();",
+                  "    pm.expect(problem.title).to.eql('Resource not found.');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{bobAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos/{{videoId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos",
+                "{{videoId}}"
               ]
             }
           },
