@@ -1,0 +1,597 @@
+{
+  "info": {
+    "_postman_id": "7a14d2fe-972c-44f7-8f22-d244e6247427",
+    "name": "FIAP X - VideoManagementService",
+    "description": "Runner collection for VideoManagementService local validation. It creates a video, uploads a sample payload using the returned presigned URL, checks MinIO, and validates read/error scenarios.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 - Happy Path",
+      "item": [
+        {
+          "name": "01 - Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('API returns 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Health body is Healthy', function () {",
+                  "    pm.expect(pm.response.text()).to.eql('Healthy');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/health",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "02 - Create Video",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const videoFilePath = pm.environment.get('videoFilePath');",
+                  "if (!videoFilePath || videoFilePath.includes('C:/Videos/meu-video.mp4')) {",
+                  "    throw new Error('Configure a variavel videoFilePath com o caminho completo de um arquivo .mp4 do seu computador.');",
+                  "}",
+                  "",
+                  "const fileName = videoFilePath.split(/[\\\\/]/).filter(Boolean).pop();",
+                  "if (!fileName || !fileName.toLowerCase().endsWith('.mp4')) {",
+                  "    throw new Error('videoFilePath deve apontar para um arquivo .mp4.');",
+                  "}",
+                  "",
+                  "pm.environment.set('videoFileName', fileName);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Create returns 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const devUserId = pm.environment.get('devUserId');",
+                  "const minioPublicEndpoint = pm.environment.get('minioPublicEndpoint').replace(/\\/$/, '');",
+                  "const minioBucket = pm.environment.get('minioBucket');",
+                  "const expectedObjectKey = `videos/${devUserId}/${json.videoId}/original.mp4`;",
+                  "const expectedResultObjectKey = `results/${devUserId}/${json.videoId}/resultado.zip`;",
+                  "const uploadedObjectUrl = `${minioPublicEndpoint}/${minioBucket}/${expectedObjectKey}`;",
+                  "",
+                  "pm.environment.set('videoId', json.videoId);",
+                  "pm.environment.set('uploadUrl', json.uploadUrl);",
+                  "pm.environment.set('expectedObjectKey', expectedObjectKey);",
+                  "pm.environment.set('expectedResultObjectKey', expectedResultObjectKey);",
+                  "pm.environment.set('uploadedObjectUrl', uploadedObjectUrl);",
+                  "",
+                  "pm.test('Response has expected fields', function () {",
+                  "    pm.expect(json.videoId).to.match(/^[0-9a-fA-F-]{36}$/);",
+                  "    pm.expect(json.status).to.eql('RECEBIDO');",
+                  "    pm.expect(json.uploadUrl).to.be.a('string').and.not.empty;",
+                  "    pm.expect(json.expiresInSeconds).to.be.above(0);",
+                  "});",
+                  "",
+                  "pm.test('Presigned URL is public and contains expected object key', function () {",
+                  "    pm.expect(json.uploadUrl.startsWith(minioPublicEndpoint)).to.eql(true);",
+                  "    pm.expect(json.uploadUrl).to.include(`/${minioBucket}/${expectedObjectKey}`);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"{{videoFileName}}\",\n  \"contentType\": \"{{videoContentType}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "03 - Upload Local Video File To MinIO With Returned URL",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (!pm.environment.get('uploadUrl')) {",
+                  "    throw new Error('uploadUrl is empty. Run \"02 - Create Video\" first.');",
+                  "}",
+                  "",
+                  "if (!pm.environment.get('videoFilePath')) {",
+                  "    throw new Error('videoFilePath is empty. Configure it with the full path to a local .mp4 file.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('MinIO accepts upload using exactly the returned URL', function () {",
+                  "    pm.expect([200, 204]).to.include(pm.response.code);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "{{videoContentType}}"
+              }
+            ],
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": "{{videoFilePath}}"
+              }
+            },
+            "url": {
+              "raw": "{{uploadUrl}}",
+              "host": [
+                "{{uploadUrl}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "04 - Confirm Uploaded Object In MinIO",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (!pm.environment.get('uploadedObjectUrl')) {",
+                  "    throw new Error('uploadedObjectUrl is empty. Run \"02 - Create Video\" first.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Uploaded object exists in private bucket', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Object Content-Type is video/mp4', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('video/mp4');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{minioAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{minioSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{minioRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "s3",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "HEAD",
+            "header": [],
+            "url": {
+              "raw": "{{uploadedObjectUrl}}",
+              "host": [
+                "{{uploadedObjectUrl}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "05 - List Videos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('List returns 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const videos = pm.response.json();",
+                  "const videoId = pm.environment.get('videoId');",
+                  "const devUserId = pm.environment.get('devUserId');",
+                  "",
+                  "pm.test('List contains created video and only current user', function () {",
+                  "    pm.expect(videos).to.be.an('array');",
+                  "    pm.expect(videos.some(v => v.videoId === videoId)).to.eql(true);",
+                  "    pm.expect(videos.every(v => v.userId === devUserId)).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "06 - List Videos Again Cache Path",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Second list returns 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Second list still contains created video', function () {",
+                  "    const videos = pm.response.json();",
+                  "    pm.expect(videos.some(v => v.videoId === pm.environment.get('videoId'))).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "07 - Get Created Video",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Detail returns 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const video = pm.response.json();",
+                  "",
+                  "pm.test('Detail matches created video contract', function () {",
+                  "    pm.expect(video.videoId).to.eql(pm.environment.get('videoId'));",
+                  "    pm.expect(video.userId).to.eql(pm.environment.get('devUserId'));",
+                  "    pm.expect(video.originalFileName).to.eql(pm.environment.get('videoFileName'));",
+                  "    pm.expect(video.originalObjectKey).to.eql(pm.environment.get('expectedObjectKey'));",
+                  "    pm.expect(video.resultObjectKey).to.eql(pm.environment.get('expectedResultObjectKey'));",
+                  "    pm.expect(video.status).to.eql('RECEBIDO');",
+                  "    pm.expect(video.errorMessage).to.eql(null);",
+                  "    pm.expect(video.processingStartedAt).to.eql(null);",
+                  "    pm.expect(video.processingFinishedAt).to.eql(null);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos/{{videoId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos",
+                "{{videoId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "08 - Download Before Completed Returns 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Download is blocked while status is RECEBIDO', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "pm.test('Conflict uses ProblemDetails', function () {",
+                  "    const problem = pm.response.json();",
+                  "    pm.expect(problem.title).to.eql('Request conflict.');",
+                  "    pm.expect(problem.detail).to.include('not available');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos/{{videoId}}/download",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos",
+                "{{videoId}}",
+                "download"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Validation And Not Found",
+      "item": [
+        {
+          "name": "09 - Reject Non MP4 Content Type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Invalid content type returns 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('ProblemDetails explains content type', function () {",
+                  "    const problem = pm.response.json();",
+                  "    pm.expect(problem.title).to.eql('Invalid request.');",
+                  "    pm.expect(problem.detail).to.include('contentType');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"invalid.mp4\",\n  \"contentType\": \"video/avi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "10 - Reject Non MP4 File Name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Invalid extension returns 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('ProblemDetails explains MP4 rule', function () {",
+                  "    const problem = pm.response.json();",
+                  "    pm.expect(problem.title).to.eql('Invalid request.');",
+                  "    pm.expect(problem.detail).to.include('MP4');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"invalid.mov\",\n  \"contentType\": \"video/mp4\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "11 - Get Missing Video Returns 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Missing detail returns 404', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test('Not found uses ProblemDetails', function () {",
+                  "    const problem = pm.response.json();",
+                  "    pm.expect(problem.title).to.eql('Resource not found.');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos/{{missingVideoId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos",
+                "{{missingVideoId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "12 - Download Missing Video Returns 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Missing download returns 404', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test('Not found uses ProblemDetails', function () {",
+                  "    const problem = pm.response.json();",
+                  "    pm.expect(problem.title).to.eql('Resource not found.');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/videos/{{missingVideoId}}/download",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "videos",
+                "{{missingVideoId}}",
+                "download"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
