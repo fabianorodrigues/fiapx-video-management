@@ -165,6 +165,12 @@ public sealed class VideoServiceTests
         public Task<Video?> GetByUserAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             Task.FromResult(_videos.FirstOrDefault(video => video.Id == videoId && video.UserId == userId));
 
+        public Task<Video?> GetByIdAsync(Guid videoId, CancellationToken cancellationToken) =>
+            Task.FromResult(_videos.FirstOrDefault(video => video.Id == videoId));
+
+        public Task SaveChangesAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
         public void Seed(Video video) => _videos.Add(video);
     }
 
@@ -200,6 +206,13 @@ public sealed class VideoServiceTests
             return Task.CompletedTask;
         }
 
+        public Task RemoveVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken)
+        {
+            RemovedKeys.Add(VideoCacheKeys.Video(userId, videoId));
+            _details.Remove(VideoCacheKeys.Video(userId, videoId));
+            return Task.CompletedTask;
+        }
+
         public void SetVideos(string userId, IReadOnlyList<VideoResponse> videos) =>
             _lists[VideoCacheKeys.Videos(userId)] = videos;
 
@@ -221,6 +234,9 @@ public sealed class VideoServiceTests
             throw new InvalidOperationException("Redis is unavailable.");
 
         public Task RemoveVideosAsync(string userId, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Redis is unavailable.");
+
+        public Task RemoveVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Redis is unavailable.");
     }
 

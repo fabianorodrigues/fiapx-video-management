@@ -1,7 +1,9 @@
 using FiapX.VideoManagement.Application.Abstractions;
 using FiapX.VideoManagement.Application.Common;
+using FiapX.VideoManagement.Application.ProcessingEvents;
 using FiapX.VideoManagement.Application.Videos;
 using FiapX.VideoManagement.Infrastructure.Cache;
+using FiapX.VideoManagement.Infrastructure.Mail;
 using FiapX.VideoManagement.Infrastructure.Persistence;
 using FiapX.VideoManagement.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +27,9 @@ public static class DependencyInjection
 
         services.AddScoped<IVideoDataStore, EfVideoDataStore>();
         services.AddScoped<VideoService>();
+        services.AddScoped<VideoProcessingStartedHandler>();
+        services.AddScoped<VideoProcessingCompletedHandler>();
+        services.AddScoped<VideoProcessingFailedHandler>();
         services.AddSingleton<IClock, SystemClock>();
 
         var redisConnectionString = configuration["REDIS_CONNECTION_STRING"] ?? "localhost:6379";
@@ -34,6 +39,9 @@ public static class DependencyInjection
 
         services.AddSingleton(S3StorageOptions.FromConfiguration(configuration));
         services.AddSingleton<IVideoStorage, S3VideoStorage>();
+
+        services.AddSingleton(SmtpNotificationOptions.FromConfiguration(configuration));
+        services.AddSingleton<INotificationSender, SmtpNotificationSender>();
 
         return services;
     }

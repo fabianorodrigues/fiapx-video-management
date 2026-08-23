@@ -38,10 +38,12 @@ public sealed class Video
     public string OriginalObjectKey { get; private set; }
     public string? ResultObjectKey { get; private set; }
     public VideoStatus Status { get; private set; }
+    public string? ErrorCode { get; private set; }
     public string? ErrorMessage { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset? ProcessingStartedAt { get; private set; }
     public DateTimeOffset? ProcessingFinishedAt { get; private set; }
+    public uint Version { get; private set; }
 
     public static Video Register(
         Guid id,
@@ -69,6 +71,7 @@ public sealed class Video
 
         Status = VideoStatus.Processando;
         ProcessingStartedAt = startedAt;
+        ErrorCode = null;
         ErrorMessage = null;
     }
 
@@ -79,6 +82,7 @@ public sealed class Video
         Status = VideoStatus.Concluido;
         ResultObjectKey = Required(resultObjectKey, nameof(resultObjectKey), 500);
         ProcessingFinishedAt = finishedAt;
+        ErrorCode = null;
         ErrorMessage = null;
     }
 
@@ -87,6 +91,30 @@ public sealed class Video
         EnsureStatus(VideoStatus.Processando, "Only processing videos can fail.");
 
         Status = VideoStatus.Erro;
+        ErrorCode = "PROCESSING_FAILED";
+        ErrorMessage = Required(sanitizedErrorMessage, nameof(sanitizedErrorMessage), 1000);
+        ProcessingFinishedAt = finishedAt;
+    }
+
+    public void MarkCompletedFromProcessingEvent(string resultObjectKey, DateTimeOffset finishedAt)
+    {
+        EnsureStatusForTerminalTransition();
+        EnsureFinishedAtDoesNotPrecedeStartedAt(finishedAt);
+
+        Status = VideoStatus.Concluido;
+        ResultObjectKey = Required(resultObjectKey, nameof(resultObjectKey), 500);
+        ProcessingFinishedAt = finishedAt;
+        ErrorCode = null;
+        ErrorMessage = null;
+    }
+
+    public void MarkFailedFromProcessingEvent(string errorCode, string sanitizedErrorMessage, DateTimeOffset finishedAt)
+    {
+        EnsureStatusForTerminalTransition();
+        EnsureFinishedAtDoesNotPrecedeStartedAt(finishedAt);
+
+        Status = VideoStatus.Erro;
+        ErrorCode = Required(errorCode, nameof(errorCode), 100);
         ErrorMessage = Required(sanitizedErrorMessage, nameof(sanitizedErrorMessage), 1000);
         ProcessingFinishedAt = finishedAt;
     }
@@ -109,6 +137,22 @@ public sealed class Video
         if (Status != expectedStatus)
         {
             throw new DomainException(message);
+        }
+    }
+
+    private void EnsureStatusForTerminalTransition()
+    {
+        if (Status is not VideoStatus.Recebido and not VideoStatus.Processando)
+        {
+            throw new DomainException("Only received or processing videos can reach a terminal processing status.");
+        }
+    }
+
+    private void EnsureFinishedAtDoesNotPrecedeStartedAt(DateTimeOffset finishedAt)
+    {
+        if (ProcessingStartedAt.HasValue && finishedAt < ProcessingStartedAt.Value)
+        {
+            throw new DomainException("Processing finish time cannot precede processing start time.");
         }
     }
 

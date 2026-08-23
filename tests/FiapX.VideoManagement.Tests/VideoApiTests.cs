@@ -346,6 +346,12 @@ public sealed class VideoApiTests
         public Task<Video?> GetByUserAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             Task.FromResult(_videos.FirstOrDefault(video => video.Id == videoId && video.UserId == userId));
 
+        public Task<Video?> GetByIdAsync(Guid videoId, CancellationToken cancellationToken) =>
+            Task.FromResult(_videos.FirstOrDefault(video => video.Id == videoId));
+
+        public Task SaveChangesAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
         public void Seed(Video video) => _videos.Add(video);
     }
 
@@ -364,6 +370,9 @@ public sealed class VideoApiTests
             Task.CompletedTask;
 
         public Task RemoveVideosAsync(string userId, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task RemoveVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 

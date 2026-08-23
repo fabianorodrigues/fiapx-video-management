@@ -41,6 +41,12 @@ public sealed class RedisVideoCache : IVideoCache
         await Database.KeyDeleteAsync(VideoCacheKeys.Videos(userId));
     }
 
+    public async Task RemoveVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await Database.KeyDeleteAsync(VideoCacheKeys.Video(userId, videoId));
+    }
+
     private IDatabase Database => _connection.Value.GetDatabase();
 
     private async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken)

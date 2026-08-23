@@ -36,6 +36,8 @@ public sealed class VideoDbContext : DbContext
         video.Property(v => v.CreatedAt).HasColumnName("created_at").IsRequired();
         video.Property(v => v.ProcessingStartedAt).HasColumnName("processing_started_at");
         video.Property(v => v.ProcessingFinishedAt).HasColumnName("processing_finished_at");
+        video.Property(v => v.ErrorCode).HasColumnName("error_code").HasMaxLength(100);
+        video.Property(v => v.Version).IsRowVersion();
 
         video.HasIndex(v => new { v.UserId, v.CreatedAt })
             .HasDatabaseName("ix_videos_user_created")

@@ -37,6 +37,11 @@ partial class VideoDbContextModelSnapshot : ModelSnapshot
                 .HasColumnType("character varying(1000)")
                 .HasColumnName("error_message");
 
+            b.Property<string>("ErrorCode")
+                .HasMaxLength(100)
+                .HasColumnType("character varying(100)")
+                .HasColumnName("error_code");
+
             b.Property<string>("OriginalFileName")
                 .IsRequired()
                 .HasMaxLength(255)
@@ -79,6 +84,12 @@ partial class VideoDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(100)
                 .HasColumnType("character varying(100)")
                 .HasColumnName("user_id");
+
+            b.Property<uint>("Version")
+                .IsConcurrencyToken()
+                .ValueGeneratedOnAddOrUpdate()
+                .HasColumnType("xid")
+                .HasColumnName("xmin");
 
             b.HasKey("Id");
 

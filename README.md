@@ -23,6 +23,34 @@ Servicos:
 - MinIO Console: `http://localhost:9001`
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
+- Mailpit: `http://localhost:8025`
+
+## Mailpit e notificacoes
+
+O envio de notificacao de falha usa SMTP best-effort. O PostgreSQL continua sendo a fonte de verdade:
+
+```text
+persistir ERRO -> invalidar cache -> tentar SMTP
+```
+
+Falha no SMTP nao desfaz o status `ERRO` e nao deve provocar retry do evento. Sem Outbox existe uma pequena janela em que o processo pode parar depois de persistir `ERRO` e antes do e-mail; essa perda de notificacao e aceita nesta etapa porque a notificacao e secundaria.
+
+Dentro do Docker Compose, a API deve usar o nome do servico:
+
+```text
+SMTP_HOST=mailpit
+SMTP_PORT=1025
+SMTP_FROM=no-reply@fiapx.local
+```
+
+Para testes executados diretamente no host Windows, sobrescreva para:
+
+```text
+SMTP_HOST=localhost
+SMTP_PORT=1025
+```
+
+Nao use `localhost` dentro do container da API para acessar o Mailpit, pois ele apontaria para o proprio container.
 
 ## Keycloak local
 
@@ -94,6 +122,19 @@ dotnet restore .\FiapX.VideoManagementService.sln --configfile .\NuGet.Config
 dotnet build .\FiapX.VideoManagementService.sln --no-restore
 dotnet test .\FiapX.VideoManagementService.sln --no-build
 docker compose config
+```
+
+Testes reais opt-in:
+
+```powershell
+$env:FIAPX_RUN_POSTGRES_INTEGRATION = 'true'
+dotnet test .\FiapX.VideoManagementService.sln --no-build
+
+docker compose up -d mailpit
+$env:FIAPX_RUN_MAILPIT_INTEGRATION = 'true'
+$env:SMTP_HOST = 'localhost'
+$env:SMTP_PORT = '1025'
+dotnet test .\FiapX.VideoManagementService.sln --no-build --filter FullyQualifiedName~ProcessingEventPostgresIntegrationTests
 ```
 
 Divida antes de CI/CD: a infraestrutura compartilhada precisa possuir uma estrategia de versionamento no GitHub, pois docker-compose, configuracao Keycloak, RabbitMQ/MinIO bootstrap e demais artefatos nao podem permanecer fora de controle de versao na entrega final.

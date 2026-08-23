@@ -23,3 +23,19 @@ public sealed class ResourceConflictException : Exception
     {
     }
 }
+
+public sealed class VideoUpdateConcurrencyException : Exception
+{
+    public VideoUpdateConcurrencyException(string message, Exception? innerException = null)
+        : base(message, innerException)
+    {
+    }
+}
+
+public sealed class ProcessingEventConcurrencyException : Exception
+{
+    public ProcessingEventConcurrencyException(string message, Exception? innerException = null)
+        : base(message, innerException)
+    {
+    }
+}

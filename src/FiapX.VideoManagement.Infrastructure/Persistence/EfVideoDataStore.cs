@@ -1,4 +1,5 @@
 using FiapX.VideoManagement.Application.Abstractions;
+using FiapX.VideoManagement.Application.Common;
 using FiapX.VideoManagement.Domain.Videos;
 using Microsoft.EntityFrameworkCore;
 
@@ -30,4 +31,21 @@ public sealed class EfVideoDataStore : IVideoDataStore
         _dbContext.Videos
             .AsNoTracking()
             .FirstOrDefaultAsync(video => video.Id == videoId && video.UserId == userId, cancellationToken);
+
+    public Task<Video?> GetByIdAsync(Guid videoId, CancellationToken cancellationToken) =>
+        _dbContext.Videos
+            .FirstOrDefaultAsync(video => video.Id == videoId, cancellationToken);
+
+    public async Task SaveChangesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            _dbContext.ChangeTracker.Clear();
+            throw new VideoUpdateConcurrencyException("Video was changed concurrently.", ex);
+        }
+    }
 }
