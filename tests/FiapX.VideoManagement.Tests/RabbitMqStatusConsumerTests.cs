@@ -1,15 +1,15 @@
 using System.Text;
-using FiapX.VideoManagement.Infrastructure.RabbitMq;
+using FiapX.VideoManagement.Infrastructure.Mensageria.RabbitMq;
 using RabbitMQ.Client;
 
 namespace FiapX.VideoManagement.Tests;
 
-public sealed class RabbitMqStatusConsumerTests
+public sealed class ConsumidorStatusRabbitMqTests
 {
     [Fact]
     public async Task Dispatcher_rejects_unknown_routing_key_as_infrastructure_contract_error()
     {
-        var dispatcher = new StatusEventDispatcher();
+        var dispatcher = new DespachanteEventoStatus();
 
         var result = await dispatcher.DispatchAsync(
             serviceProvider: new EmptyServiceProvider(),
@@ -24,7 +24,7 @@ public sealed class RabbitMqStatusConsumerTests
     [Fact]
     public async Task Dispatcher_rejects_malformed_status_payload_before_handler_resolution()
     {
-        var dispatcher = new StatusEventDispatcher();
+        var dispatcher = new DespachanteEventoStatus();
 
         var result = await dispatcher.DispatchAsync(
             serviceProvider: new EmptyServiceProvider(),

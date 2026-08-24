@@ -1,12 +1,12 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Json;
-using FiapX.VideoManagement.Application.Abstractions;
-using FiapX.VideoManagement.Application.Common;
-using FiapX.VideoManagement.Application.ProcessingEvents;
+using FiapX.VideoManagement.Application.Portas;
+using FiapX.VideoManagement.Application.Comum;
+using FiapX.VideoManagement.Application.Videos.Processamento;
 using FiapX.VideoManagement.Application.Videos;
 using FiapX.VideoManagement.Domain.Videos;
-using FiapX.VideoManagement.Infrastructure.Mail;
-using FiapX.VideoManagement.Infrastructure.Persistence;
+using FiapX.VideoManagement.Infrastructure.Notificacoes;
+using FiapX.VideoManagement.Infrastructure.Persistencia;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -36,7 +36,7 @@ public sealed class ProcessingEventPostgresIntegrationTests
 
         await using (var scope = provider.CreateAsyncScope())
         {
-            await scope.ServiceProvider.GetRequiredService<VideoProcessingStartedHandler>().HandleAsync(
+            await scope.ServiceProvider.GetRequiredService<ManipuladorProcessamentoVideoIniciado>().ManipularAsync(
                 new VideoProcessingStarted(
                     Guid.NewGuid(),
                     startedVideo.Id,
@@ -47,19 +47,19 @@ public sealed class ProcessingEventPostgresIntegrationTests
 
         await using (var scope = provider.CreateAsyncScope())
         {
-            await scope.ServiceProvider.GetRequiredService<VideoProcessingCompletedHandler>().HandleAsync(
+            await scope.ServiceProvider.GetRequiredService<ManipuladorProcessamentoVideoConcluido>().ManipularAsync(
                 new VideoProcessingCompleted(
                     Guid.NewGuid(),
                     completedVideo.Id,
                     completedVideo.UserId,
-                    VideoObjectKeys.Result(completedVideo.UserId, completedVideo.Id),
+                    ChavesObjetoVideo.Result(completedVideo.UserId, completedVideo.Id),
                     Now.AddMinutes(2)),
                 CancellationToken.None);
         }
 
         await using (var scope = provider.CreateAsyncScope())
         {
-            await scope.ServiceProvider.GetRequiredService<VideoProcessingFailedHandler>().HandleAsync(
+            await scope.ServiceProvider.GetRequiredService<ManipuladorProcessamentoVideoFalhou>().ManipularAsync(
                 new VideoProcessingFailed(
                     Guid.NewGuid(),
                     failedVideo.Id,
@@ -77,7 +77,7 @@ public sealed class ProcessingEventPostgresIntegrationTests
         Assert.Equal(VideoStatus.Processando, started.Status);
         Assert.Equal(DateTimeOffset.Parse("2026-08-23T16:30:00Z"), started.ProcessingStartedAt);
         Assert.Equal(VideoStatus.Concluido, completed.Status);
-        Assert.Equal(VideoObjectKeys.Result(completed.UserId, completed.Id), completed.ResultObjectKey);
+        Assert.Equal(ChavesObjetoVideo.Result(completed.UserId, completed.Id), completed.ResultObjectKey);
         Assert.Equal(VideoStatus.Erro, failed.Status);
         Assert.Equal("PROCESSING_FAILED", failed.ErrorCode);
         Assert.Equal("safe failure", failed.ErrorMessage);
@@ -140,7 +140,7 @@ public sealed class ProcessingEventPostgresIntegrationTests
                     Guid.NewGuid(),
                     video.Id,
                     video.UserId,
-                    VideoObjectKeys.Result(video.UserId, video.Id),
+                    ChavesObjetoVideo.Result(video.UserId, video.Id),
                     Now.AddMinutes(2)),
                 priority: 1));
 
@@ -189,8 +189,8 @@ public sealed class ProcessingEventPostgresIntegrationTests
         }
 
         await using var database = await PostgresTestDatabase.CreateAsync();
-        var unavailableSmtp = new SmtpNotificationSender(
-            new SmtpNotificationOptions
+        var unavailableSmtp = new EnviadorNotificacaoSmtp(
+            new OpcoesNotificacaoSmtp
             {
                 Host = "localhost",
                 Port = 1,
@@ -222,8 +222,8 @@ public sealed class ProcessingEventPostgresIntegrationTests
         await TryClearMailpitAsync(http);
 
         await using var database = await PostgresTestDatabase.CreateAsync();
-        var smtp = new SmtpNotificationSender(
-            new SmtpNotificationOptions
+        var smtp = new EnviadorNotificacaoSmtp(
+            new OpcoesNotificacaoSmtp
             {
                 Host = MailpitIntegrationSettings.SmtpHost,
                 Port = MailpitIntegrationSettings.SmtpPort,
@@ -246,7 +246,7 @@ public sealed class ProcessingEventPostgresIntegrationTests
 
     private static ServiceProvider CreateProvider(
         string connectionString,
-        INotificationSender? notificationSender = null,
+        IEnviadorNotificacao? notificationSender = null,
         ConcurrencySaveGate? saveGate = null)
     {
         var services = new ServiceCollection();
@@ -254,12 +254,12 @@ public sealed class ProcessingEventPostgresIntegrationTests
         services.AddDbContext<VideoDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<ScopedOperationContext>();
         services.AddSingleton(saveGate ?? new ConcurrencySaveGate(disabled: true));
-        services.AddScoped<IVideoDataStore, GatedEfVideoDataStore>();
-        services.AddSingleton<IVideoCache, IntegrationCache>();
+        services.AddScoped<IRepositorioVideo, GatedRepositorioVideoEf>();
+        services.AddSingleton<ICacheVideo, IntegrationCache>();
         services.AddSingleton(notificationSender ?? new IntegrationNotificationSender());
-        services.AddScoped<VideoProcessingStartedHandler>();
-        services.AddScoped<VideoProcessingCompletedHandler>();
-        services.AddScoped<VideoProcessingFailedHandler>();
+        services.AddScoped<ManipuladorProcessamentoVideoIniciado>();
+        services.AddScoped<ManipuladorProcessamentoVideoConcluido>();
+        services.AddScoped<ManipuladorProcessamentoVideoFalhou>();
         return services.BuildServiceProvider(validateScopes: true);
     }
 
@@ -273,18 +273,18 @@ public sealed class ProcessingEventPostgresIntegrationTests
     private static async Task<Video> SeedVideoAsync(ServiceProvider provider, string userId)
     {
         await using var scope = provider.CreateAsyncScope();
-        var videos = scope.ServiceProvider.GetRequiredService<IVideoDataStore>();
+        var videos = scope.ServiceProvider.GetRequiredService<IRepositorioVideo>();
         var videoId = Guid.NewGuid();
-        var video = Video.Register(
+        var video = Video.Registrar(
             videoId,
             userId,
             $"{userId}@fiapx.local",
             "video.mp4",
-            VideoObjectKeys.Original(userId, videoId),
-            VideoObjectKeys.Result(userId, videoId),
+            ChavesObjetoVideo.Original(userId, videoId),
+            ChavesObjetoVideo.Result(userId, videoId),
             Now);
 
-        await videos.AddAsync(video, CancellationToken.None);
+        await videos.AdicionarAsync(video, CancellationToken.None);
         return video;
     }
 
@@ -302,7 +302,7 @@ public sealed class ProcessingEventPostgresIntegrationTests
     {
         await using var scope = provider.CreateAsyncScope();
         scope.ServiceProvider.GetRequiredService<ScopedOperationContext>().SavePriority = priority;
-        await scope.ServiceProvider.GetRequiredService<VideoProcessingStartedHandler>().HandleAsync(@event, CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<ManipuladorProcessamentoVideoIniciado>().ManipularAsync(@event, CancellationToken.None);
     }
 
     private static async Task HandleCompletedAsync(
@@ -312,7 +312,7 @@ public sealed class ProcessingEventPostgresIntegrationTests
     {
         await using var scope = provider.CreateAsyncScope();
         scope.ServiceProvider.GetRequiredService<ScopedOperationContext>().SavePriority = priority;
-        await scope.ServiceProvider.GetRequiredService<VideoProcessingCompletedHandler>().HandleAsync(@event, CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<ManipuladorProcessamentoVideoConcluido>().ManipularAsync(@event, CancellationToken.None);
     }
 
     private static async Task HandleFailedAsync(
@@ -322,7 +322,7 @@ public sealed class ProcessingEventPostgresIntegrationTests
     {
         await using var scope = provider.CreateAsyncScope();
         scope.ServiceProvider.GetRequiredService<ScopedOperationContext>().SavePriority = priority;
-        await scope.ServiceProvider.GetRequiredService<VideoProcessingFailedHandler>().HandleAsync(@event, CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<ManipuladorProcessamentoVideoFalhou>().ManipularAsync(@event, CancellationToken.None);
     }
 
     private static async Task TryClearMailpitAsync(HttpClient http)
@@ -336,14 +336,14 @@ public sealed class ProcessingEventPostgresIntegrationTests
         }
     }
 
-    private sealed class GatedEfVideoDataStore : IVideoDataStore
+    private sealed class GatedRepositorioVideoEf : IRepositorioVideo
     {
         private readonly VideoDbContext _dbContext;
         private readonly ConcurrencySaveGate _saveGate;
         private readonly ScopedOperationContext _operationContext;
         private bool _saveGateUsed;
 
-        public GatedEfVideoDataStore(
+        public GatedRepositorioVideoEf(
             VideoDbContext dbContext,
             ConcurrencySaveGate saveGate,
             ScopedOperationContext operationContext)
@@ -353,27 +353,27 @@ public sealed class ProcessingEventPostgresIntegrationTests
             _operationContext = operationContext;
         }
 
-        public async Task AddAsync(Video video, CancellationToken cancellationToken)
+        public async Task AdicionarAsync(Video video, CancellationToken cancellationToken)
         {
             await _dbContext.Videos.AddAsync(video, cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        public async Task<IReadOnlyList<Video>> ListByUserAsync(string userId, CancellationToken cancellationToken) =>
+        public async Task<IReadOnlyList<Video>> ListarPorUsuarioAsync(string userId, CancellationToken cancellationToken) =>
             await _dbContext.Videos
                 .AsNoTracking()
                 .Where(video => video.UserId == userId)
                 .ToListAsync(cancellationToken);
 
-        public Task<Video?> GetByUserAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
+        public Task<Video?> ObterPorUsuarioAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             _dbContext.Videos
                 .AsNoTracking()
                 .FirstOrDefaultAsync(video => video.Id == videoId && video.UserId == userId, cancellationToken);
 
-        public Task<Video?> GetByIdAsync(Guid videoId, CancellationToken cancellationToken) =>
+        public Task<Video?> ObterPorIdAsync(Guid videoId, CancellationToken cancellationToken) =>
             _dbContext.Videos.FirstOrDefaultAsync(video => video.Id == videoId, cancellationToken);
 
-        public async Task SaveChangesAsync(CancellationToken cancellationToken)
+        public async Task SalvarAlteracoesAsync(CancellationToken cancellationToken)
         {
             if (!_saveGateUsed)
             {
@@ -388,7 +388,7 @@ public sealed class ProcessingEventPostgresIntegrationTests
             catch (DbUpdateConcurrencyException ex)
             {
                 _dbContext.ChangeTracker.Clear();
-                throw new VideoUpdateConcurrencyException("Video was changed concurrently.", ex);
+                throw new ConcorrenciaAtualizacaoVideoException("Video was changed concurrently.", ex);
             }
             finally
             {
@@ -448,42 +448,42 @@ public sealed class ProcessingEventPostgresIntegrationTests
         }
     }
 
-    private sealed class IntegrationCache : IVideoCache
+    private sealed class IntegrationCache : ICacheVideo
     {
         public ConcurrentBag<string> RemovedKeys { get; } = [];
 
-        public Task<IReadOnlyList<VideoResponse>?> GetVideosAsync(string userId, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<VideoResponse>?> ObterVideosAsync(string userId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<VideoResponse>?>(null);
 
-        public Task<VideoResponse?> GetVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
+        public Task<VideoResponse?> ObterVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             Task.FromResult<VideoResponse?>(null);
 
-        public Task SetVideosAsync(string userId, IReadOnlyList<VideoResponse> videos, CancellationToken cancellationToken) =>
+        public Task SalvarVideosAsync(string userId, IReadOnlyList<VideoResponse> videos, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
-        public Task SetVideoAsync(string userId, Guid videoId, VideoResponse video, CancellationToken cancellationToken) =>
+        public Task SalvarVideoAsync(string userId, Guid videoId, VideoResponse video, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
-        public Task RemoveVideosAsync(string userId, CancellationToken cancellationToken)
+        public Task RemoverVideosAsync(string userId, CancellationToken cancellationToken)
         {
             RemovedKeys.Add(VideoCacheKeys.Videos(userId));
             return Task.CompletedTask;
         }
 
-        public Task RemoveVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken)
+        public Task RemoverVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken)
         {
             RemovedKeys.Add(VideoCacheKeys.Video(userId, videoId));
             return Task.CompletedTask;
         }
     }
 
-    private sealed class IntegrationNotificationSender : INotificationSender
+    private sealed class IntegrationNotificationSender : IEnviadorNotificacao
     {
         private int _attemptCount;
 
         public int AttemptCount => _attemptCount;
 
-        public Task SendProcessingFailedAsync(ProcessingFailedNotification notification, CancellationToken cancellationToken)
+        public Task EnviarFalhaProcessamentoAsync(NotificacaoFalhaProcessamento notification, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _attemptCount);
             return Task.CompletedTask;

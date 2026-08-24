@@ -1,12 +1,12 @@
-using FiapX.VideoManagement.Application.Abstractions;
-using FiapX.VideoManagement.Application.Common;
+using FiapX.VideoManagement.Application.Portas;
+using FiapX.VideoManagement.Application.Comum;
 using FiapX.VideoManagement.Application.Videos;
 using FiapX.VideoManagement.Domain.Videos;
 using Microsoft.Extensions.Logging;
 
 namespace FiapX.VideoManagement.Tests;
 
-public sealed class VideoServiceTests
+public sealed class ServicoVideoTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 23, 12, 0, 0, TimeSpan.Zero);
 
@@ -17,7 +17,7 @@ public sealed class VideoServiceTests
         var cache = new InMemoryVideoCache();
         var service = CreateService(store, cache);
 
-        var response = await service.CreateAsync(new CreateVideoRequest("original.mp4", "video/mp4"), CancellationToken.None);
+        var response = await service.CriarAsync(new CreateVideoRequest("original.mp4", "video/mp4"), CancellationToken.None);
 
         Assert.Equal("RECEBIDO", response.Status);
         Assert.Single(store.Videos);
@@ -37,7 +37,7 @@ public sealed class VideoServiceTests
         cache.SetVideos("user-1", cached);
         var service = CreateService(store, cache);
 
-        var response = await service.ListAsync(CancellationToken.None);
+        var response = await service.ListarAsync(CancellationToken.None);
 
         Assert.Single(response);
         Assert.Equal("cached.mp4", response[0].OriginalFileName);
@@ -52,7 +52,7 @@ public sealed class VideoServiceTests
         var cache = new InMemoryVideoCache();
         var service = CreateService(store, cache);
 
-        var response = await service.ListAsync(CancellationToken.None);
+        var response = await service.ListarAsync(CancellationToken.None);
 
         Assert.Single(response);
         Assert.Equal("db.mp4", response[0].OriginalFileName);
@@ -65,15 +65,15 @@ public sealed class VideoServiceTests
     {
         var store = new InMemoryVideoDataStore();
         store.Seed(CreateVideo("user-1", "db.mp4"));
-        var logger = new ListLogger<VideoService>();
+        var logger = new ListLogger<ServicoVideo>();
         var service = CreateService(store, new ThrowingVideoCache(), logger: logger);
 
-        var response = await service.ListAsync(CancellationToken.None);
+        var response = await service.ListarAsync(CancellationToken.None);
 
         Assert.Single(response);
         Assert.Contains(logger.Entries, entry =>
             entry.Level == LogLevel.Warning
-            && entry.Message.Contains("Redis cache operation failed", StringComparison.Ordinal)
+            && entry.Message.Contains("cache Redis", StringComparison.Ordinal)
             && entry.Exception is InvalidOperationException);
     }
 
@@ -85,8 +85,8 @@ public sealed class VideoServiceTests
         store.Seed(otherUserVideo);
         var service = CreateService(store, new InMemoryVideoCache());
 
-        await Assert.ThrowsAsync<ResourceNotFoundException>(() =>
-            service.GetAsync(otherUserVideo.Id, CancellationToken.None));
+        await Assert.ThrowsAsync<RecursoNaoEncontradoException>(() =>
+            service.ObterAsync(otherUserVideo.Id, CancellationToken.None));
     }
 
     [Fact]
@@ -97,116 +97,116 @@ public sealed class VideoServiceTests
         store.Seed(video);
         var service = CreateService(store, new InMemoryVideoCache());
 
-        await Assert.ThrowsAsync<ResourceConflictException>(() =>
-            service.GetDownloadAsync(video.Id, CancellationToken.None));
+        await Assert.ThrowsAsync<ConflitoRecursoException>(() =>
+            service.ObterDownloadAsync(video.Id, CancellationToken.None));
     }
 
     [Fact]
     public async Task Download_returns_url_when_video_is_completed()
     {
         var video = CreateVideo("user-1", "completed.mp4");
-        video.MarkProcessing(Now.AddMinutes(1));
-        video.MarkCompleted(VideoObjectKeys.Result(video.UserId, video.Id), Now.AddMinutes(2));
+        video.MarcarProcessando(Now.AddMinutes(1));
+        video.MarcarConcluido(ChavesObjetoVideo.Result(video.UserId, video.Id), Now.AddMinutes(2));
         var store = new InMemoryVideoDataStore();
         store.Seed(video);
         var service = CreateService(store, new InMemoryVideoCache());
 
-        var response = await service.GetDownloadAsync(video.Id, CancellationToken.None);
+        var response = await service.ObterDownloadAsync(video.Id, CancellationToken.None);
 
         Assert.Equal("http://localhost:9000/download", response.DownloadUrl);
     }
 
-    private static VideoService CreateService(
+    private static ServicoVideo CreateService(
         InMemoryVideoDataStore store,
-        IVideoCache cache,
-        ICurrentUser? currentUser = null,
-        ListLogger<VideoService>? logger = null) =>
+        ICacheVideo cache,
+        IUsuarioAtual? currentUser = null,
+        ListLogger<ServicoVideo>? logger = null) =>
         new(
             store,
             cache,
             new StubVideoStorage(),
             currentUser ?? new StubCurrentUser("user-1", "user1@fiapx.local"),
             new FixedClock(Now),
-            logger ?? new ListLogger<VideoService>());
+            logger ?? new ListLogger<ServicoVideo>());
 
     private static Video CreateVideo(string userId, string fileName)
     {
         var videoId = Guid.NewGuid();
-        return Video.Register(
+        return Video.Registrar(
             videoId,
             userId,
             $"{userId}@fiapx.local",
             fileName,
-            VideoObjectKeys.Original(userId, videoId),
-            VideoObjectKeys.Result(userId, videoId),
+            ChavesObjetoVideo.Original(userId, videoId),
+            ChavesObjetoVideo.Result(userId, videoId),
             Now);
     }
 
-    private sealed class InMemoryVideoDataStore : IVideoDataStore
+    private sealed class InMemoryVideoDataStore : IRepositorioVideo
     {
         private readonly List<Video> _videos = [];
 
         public IReadOnlyList<Video> Videos => _videos;
         public int ListCalls { get; private set; }
 
-        public Task AddAsync(Video video, CancellationToken cancellationToken)
+        public Task AdicionarAsync(Video video, CancellationToken cancellationToken)
         {
             _videos.Add(video);
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<Video>> ListByUserAsync(string userId, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<Video>> ListarPorUsuarioAsync(string userId, CancellationToken cancellationToken)
         {
             ListCalls++;
             return Task.FromResult<IReadOnlyList<Video>>(
                 _videos.Where(video => video.UserId == userId).OrderByDescending(video => video.CreatedAt).ToArray());
         }
 
-        public Task<Video?> GetByUserAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
+        public Task<Video?> ObterPorUsuarioAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             Task.FromResult(_videos.FirstOrDefault(video => video.Id == videoId && video.UserId == userId));
 
-        public Task<Video?> GetByIdAsync(Guid videoId, CancellationToken cancellationToken) =>
+        public Task<Video?> ObterPorIdAsync(Guid videoId, CancellationToken cancellationToken) =>
             Task.FromResult(_videos.FirstOrDefault(video => video.Id == videoId));
 
-        public Task SaveChangesAsync(CancellationToken cancellationToken) =>
+        public Task SalvarAlteracoesAsync(CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
         public void Seed(Video video) => _videos.Add(video);
     }
 
-    private sealed class InMemoryVideoCache : IVideoCache
+    private sealed class InMemoryVideoCache : ICacheVideo
     {
         private readonly Dictionary<string, IReadOnlyList<VideoResponse>> _lists = [];
         private readonly Dictionary<string, VideoResponse> _details = [];
 
         public List<string> RemovedKeys { get; } = [];
 
-        public Task<IReadOnlyList<VideoResponse>?> GetVideosAsync(string userId, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<VideoResponse>?> ObterVideosAsync(string userId, CancellationToken cancellationToken) =>
             Task.FromResult(_lists.GetValueOrDefault(VideoCacheKeys.Videos(userId)));
 
-        public Task<VideoResponse?> GetVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
+        public Task<VideoResponse?> ObterVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             Task.FromResult(_details.GetValueOrDefault(VideoCacheKeys.Video(userId, videoId)));
 
-        public Task SetVideosAsync(string userId, IReadOnlyList<VideoResponse> videos, CancellationToken cancellationToken)
+        public Task SalvarVideosAsync(string userId, IReadOnlyList<VideoResponse> videos, CancellationToken cancellationToken)
         {
             SetVideos(userId, videos);
             return Task.CompletedTask;
         }
 
-        public Task SetVideoAsync(string userId, Guid videoId, VideoResponse video, CancellationToken cancellationToken)
+        public Task SalvarVideoAsync(string userId, Guid videoId, VideoResponse video, CancellationToken cancellationToken)
         {
             _details[VideoCacheKeys.Video(userId, videoId)] = video;
             return Task.CompletedTask;
         }
 
-        public Task RemoveVideosAsync(string userId, CancellationToken cancellationToken)
+        public Task RemoverVideosAsync(string userId, CancellationToken cancellationToken)
         {
             RemovedKeys.Add(VideoCacheKeys.Videos(userId));
             _lists.Remove(VideoCacheKeys.Videos(userId));
             return Task.CompletedTask;
         }
 
-        public Task RemoveVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken)
+        public Task RemoverVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken)
         {
             RemovedKeys.Add(VideoCacheKeys.Video(userId, videoId));
             _details.Remove(VideoCacheKeys.Video(userId, videoId));
@@ -219,38 +219,38 @@ public sealed class VideoServiceTests
         public bool HasVideos(string userId) => _lists.ContainsKey(VideoCacheKeys.Videos(userId));
     }
 
-    private sealed class ThrowingVideoCache : IVideoCache
+    private sealed class ThrowingVideoCache : ICacheVideo
     {
-        public Task<IReadOnlyList<VideoResponse>?> GetVideosAsync(string userId, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<VideoResponse>?> ObterVideosAsync(string userId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Redis is unavailable.");
 
-        public Task<VideoResponse?> GetVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
+        public Task<VideoResponse?> ObterVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Redis is unavailable.");
 
-        public Task SetVideosAsync(string userId, IReadOnlyList<VideoResponse> videos, CancellationToken cancellationToken) =>
+        public Task SalvarVideosAsync(string userId, IReadOnlyList<VideoResponse> videos, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Redis is unavailable.");
 
-        public Task SetVideoAsync(string userId, Guid videoId, VideoResponse video, CancellationToken cancellationToken) =>
+        public Task SalvarVideoAsync(string userId, Guid videoId, VideoResponse video, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Redis is unavailable.");
 
-        public Task RemoveVideosAsync(string userId, CancellationToken cancellationToken) =>
+        public Task RemoverVideosAsync(string userId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Redis is unavailable.");
 
-        public Task RemoveVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
+        public Task RemoverVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Redis is unavailable.");
     }
 
-    private sealed record StubCurrentUser(string UserId, string Email) : ICurrentUser;
+    private sealed record StubCurrentUser(string UserId, string Email) : IUsuarioAtual;
 
-    private sealed record FixedClock(DateTimeOffset UtcNow) : IClock;
+    private sealed record FixedClock(DateTimeOffset UtcNow) : IRelogio;
 
-    private sealed class StubVideoStorage : IVideoStorage
+    private sealed class StubVideoStorage : IArmazenamentoVideo
     {
-        public Task<PresignedUrl> CreateUploadUrlAsync(string objectKey, string contentType, CancellationToken cancellationToken) =>
-            Task.FromResult(new PresignedUrl("http://localhost:9000/upload", 900));
+        public Task<UrlPreAssinada> CriarUrlUploadAsync(string objectKey, string contentType, CancellationToken cancellationToken) =>
+            Task.FromResult(new UrlPreAssinada("http://localhost:9000/upload", 900));
 
-        public Task<PresignedUrl> CreateDownloadUrlAsync(string objectKey, CancellationToken cancellationToken) =>
-            Task.FromResult(new PresignedUrl("http://localhost:9000/download", 900));
+        public Task<UrlPreAssinada> CriarUrlDownloadAsync(string objectKey, CancellationToken cancellationToken) =>
+            Task.FromResult(new UrlPreAssinada("http://localhost:9000/download", 900));
     }
 
     private sealed class ListLogger<T> : ILogger<T>

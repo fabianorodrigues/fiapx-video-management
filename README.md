@@ -1,10 +1,10 @@
-# VideoManagementService
+# fiapx-video-management
 
 Microsservico .NET 10 para registrar videos, listar status e gerar URLs presigned para upload/download no MinIO.
 
 ## Execucao local
 
-Na raiz do repositorio:
+Na raiz compartilhada `C:\Projetos\fiap-fase5`:
 
 ```powershell
 $env:KEYCLOAK_ADMIN_USERNAME = 'admin'
@@ -81,7 +81,7 @@ Topologia local:
 
 ```text
 Postman/cURL -> http://localhost:8081
-VideoManagementService -> http://keycloak:8080
+API -> http://keycloak:8080
 ```
 
 Clients:
@@ -142,10 +142,10 @@ Invoke-WebRequest -Method Put -Uri $video.uploadUrl -ContentType 'video/mp4' -In
 dotnet restore .\FiapX.VideoManagementService.sln --configfile .\NuGet.Config
 dotnet build .\FiapX.VideoManagementService.sln --no-restore
 dotnet test .\FiapX.VideoManagementService.sln --no-build
-docker compose config
+Push-Location ..; docker compose config; Pop-Location
 ```
 
-E2E RabbitMQ completo, a partir da raiz do repositorio:
+E2E RabbitMQ completo, a partir da raiz compartilhada `C:\Projetos\fiap-fase5`:
 
 ```powershell
 $env:KEYCLOAK_ADMIN_USERNAME = 'admin'

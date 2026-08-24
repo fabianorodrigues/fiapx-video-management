@@ -1,12 +1,12 @@
-using FiapX.VideoManagement.Application.Abstractions;
-using FiapX.VideoManagement.Application.Common;
-using FiapX.VideoManagement.Application.ProcessingEvents;
+using FiapX.VideoManagement.Application.Portas;
+using FiapX.VideoManagement.Application.Comum;
+using FiapX.VideoManagement.Application.Videos.Processamento;
 using FiapX.VideoManagement.Application.Videos;
 using FiapX.VideoManagement.Infrastructure.Cache;
-using FiapX.VideoManagement.Infrastructure.Mail;
-using FiapX.VideoManagement.Infrastructure.Persistence;
-using FiapX.VideoManagement.Infrastructure.RabbitMq;
-using FiapX.VideoManagement.Infrastructure.Storage;
+using FiapX.VideoManagement.Infrastructure.Notificacoes;
+using FiapX.VideoManagement.Infrastructure.Persistencia;
+using FiapX.VideoManagement.Infrastructure.Mensageria.RabbitMq;
+using FiapX.VideoManagement.Infrastructure.Armazenamento;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,33 +21,33 @@ public static class DependencyInjection
     {
         var postgresConnectionString = configuration.GetConnectionString("Postgres")
             ?? configuration["POSTGRES_CONNECTION_STRING"]
-            ?? "Host=localhost;Port=5432;Database=fiapx_videos;Username=fiapx;Password=fiapx_dev_password";
+            ?? throw new InvalidOperationException("POSTGRES_CONNECTION_STRING é obrigatória.");
 
         services.AddDbContext<VideoDbContext>(options =>
             options.UseNpgsql(postgresConnectionString));
 
-        services.AddScoped<IVideoDataStore, EfVideoDataStore>();
-        services.AddScoped<VideoService>();
-        services.AddScoped<VideoProcessingStartedHandler>();
-        services.AddScoped<VideoProcessingCompletedHandler>();
-        services.AddScoped<VideoProcessingFailedHandler>();
-        services.AddSingleton<IClock, SystemClock>();
+        services.AddScoped<IRepositorioVideo, RepositorioVideoEf>();
+        services.AddScoped<ServicoVideo>();
+        services.AddScoped<ManipuladorProcessamentoVideoIniciado>();
+        services.AddScoped<ManipuladorProcessamentoVideoConcluido>();
+        services.AddScoped<ManipuladorProcessamentoVideoFalhou>();
+        services.AddSingleton<IRelogio, RelogioSistema>();
 
         var redisConnectionString = configuration["REDIS_CONNECTION_STRING"] ?? "localhost:6379";
         var cacheTtlSeconds = configuration.GetValue("CACHE_TTL_SECONDS", 30);
-        services.AddSingleton<IVideoCache>(_ =>
-            new RedisVideoCache(redisConnectionString, TimeSpan.FromSeconds(cacheTtlSeconds)));
+        services.AddSingleton<ICacheVideo>(_ =>
+            new CacheVideoRedis(redisConnectionString, TimeSpan.FromSeconds(cacheTtlSeconds)));
 
-        services.AddSingleton(S3StorageOptions.FromConfiguration(configuration));
-        services.AddSingleton<IVideoStorage, S3VideoStorage>();
+        services.AddSingleton(OpcoesArmazenamentoS3.FromConfiguration(configuration));
+        services.AddSingleton<IArmazenamentoVideo, ArmazenamentoVideoS3>();
 
-        services.AddSingleton(SmtpNotificationOptions.FromConfiguration(configuration));
-        services.AddSingleton<INotificationSender, SmtpNotificationSender>();
+        services.AddSingleton(OpcoesNotificacaoSmtp.FromConfiguration(configuration));
+        services.AddSingleton<IEnviadorNotificacao, EnviadorNotificacaoSmtp>();
 
         services.AddSingleton(RabbitMqOptions.FromConfiguration(configuration));
         services.AddSingleton(StatusConsumerOptions.FromConfiguration(configuration));
-        services.AddSingleton<StatusEventDispatcher>();
-        services.AddHostedService<RabbitMqStatusConsumer>();
+        services.AddSingleton<DespachanteEventoStatus>();
+        services.AddHostedService<ConsumidorStatusRabbitMq>();
 
         return services;
     }

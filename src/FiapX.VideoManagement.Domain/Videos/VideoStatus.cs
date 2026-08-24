@@ -1,4 +1,4 @@
-using FiapX.VideoManagement.Domain.Common;
+using FiapX.VideoManagement.Domain.Comum;
 
 namespace FiapX.VideoManagement.Domain.Videos;
 
@@ -12,23 +12,23 @@ public enum VideoStatus
 
 public static class VideoStatusExtensions
 {
-    public static string ToContractValue(this VideoStatus status) =>
+    public static string ParaValorContrato(this VideoStatus status) =>
         status switch
         {
             VideoStatus.Recebido => "RECEBIDO",
             VideoStatus.Processando => "PROCESSANDO",
             VideoStatus.Concluido => "CONCLUIDO",
             VideoStatus.Erro => "ERRO",
-            _ => throw new DomainException($"Unsupported video status '{status}'.")
+            _ => throw new ExcecaoDominio($"Status de vídeo não suportado: '{status}'.")
         };
 
-    public static VideoStatus FromContractValue(string value) =>
+    public static VideoStatus DeValorContrato(string value) =>
         value switch
         {
             "RECEBIDO" => VideoStatus.Recebido,
             "PROCESSANDO" => VideoStatus.Processando,
             "CONCLUIDO" => VideoStatus.Concluido,
             "ERRO" => VideoStatus.Erro,
-            _ => throw new DomainException($"Unsupported video status '{value}'.")
+            _ => throw new ExcecaoDominio($"Status de vídeo não suportado: '{value}'.")
         };
 }

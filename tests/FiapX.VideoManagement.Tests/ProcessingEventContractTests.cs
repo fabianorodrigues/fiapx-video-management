@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FiapX.VideoManagement.Application.ProcessingEvents;
+using FiapX.VideoManagement.Application.Videos.Processamento;
 
 namespace FiapX.VideoManagement.Tests;
 

@@ -20,7 +20,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 64198 appuser \
+    && chown -R appuser:appuser /app
 COPY --from=build /app/publish .
 EXPOSE 8080
+USER appuser
 ENTRYPOINT ["dotnet", "FiapX.VideoManagement.Api.dll"]

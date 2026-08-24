@@ -4,7 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
-using FiapX.VideoManagement.Application.Abstractions;
+using FiapX.VideoManagement.Application.Portas;
 using FiapX.VideoManagement.Application.Videos;
 using FiapX.VideoManagement.Domain.Videos;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -222,6 +222,9 @@ public sealed class VideoApiTests
     private static WebApplicationFactory<Program> CreateFactory(ApiInMemoryVideoDataStore? store = null)
     {
         store ??= new ApiInMemoryVideoDataStore();
+        Environment.SetEnvironmentVariable("POSTGRES_CONNECTION_STRING", "Host=localhost;Port=5432;Database=fiapx_test;Username=fiapx;Password=test-only");
+        Environment.SetEnvironmentVariable("MINIO_SECRET_KEY", "test-only");
+        Environment.SetEnvironmentVariable("RABBITMQ_PASSWORD", "test-only");
 
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -234,20 +237,23 @@ public sealed class VideoApiTests
                     {
                         ["JWT_METADATA_ADDRESS"] = "http://localhost/.well-known/openid-configuration",
                         ["JWT_ISSUER"] = TestIssuer,
-                        ["JWT_AUDIENCE"] = TestAudience
+                        ["JWT_AUDIENCE"] = TestAudience,
+                        ["POSTGRES_CONNECTION_STRING"] = "Host=localhost;Port=5432;Database=fiapx_test;Username=fiapx;Password=test-only",
+                        ["MINIO_SECRET_KEY"] = "test-only",
+                        ["RABBITMQ_PASSWORD"] = "test-only"
                     });
                 });
                 builder.ConfigureServices(services =>
                 {
-                    services.RemoveAll<IVideoDataStore>();
-                    services.RemoveAll<IVideoCache>();
-                    services.RemoveAll<IVideoStorage>();
-                    services.RemoveAll<IClock>();
+                    services.RemoveAll<IRepositorioVideo>();
+                    services.RemoveAll<ICacheVideo>();
+                    services.RemoveAll<IArmazenamentoVideo>();
+                    services.RemoveAll<IRelogio>();
 
-                    services.AddSingleton<IVideoDataStore>(store);
-                    services.AddSingleton<IVideoCache, ApiInMemoryVideoCache>();
-                    services.AddSingleton<IVideoStorage, ApiStubVideoStorage>();
-                    services.AddSingleton<IClock>(new ApiFixedClock(Now));
+                    services.AddSingleton<IRepositorioVideo>(store);
+                    services.AddSingleton<ICacheVideo, ApiInMemoryVideoCache>();
+                    services.AddSingleton<IArmazenamentoVideo, ApiStubVideoStorage>();
+                    services.AddSingleton<IRelogio>(new ApiFixedClock(Now));
                     services.AddSingleton<IPostConfigureOptions<JwtBearerOptions>, TestJwtBearerPostConfigureOptions>();
                 });
             });
@@ -297,13 +303,13 @@ public sealed class VideoApiTests
     private static Video CreateVideo(string userId, string fileName)
     {
         var videoId = Guid.NewGuid();
-        return Video.Register(
+        return Video.Registrar(
             videoId,
             userId,
             $"{userId}@fiapx.local",
             fileName,
-            VideoObjectKeys.Original(userId, videoId),
-            VideoObjectKeys.Result(userId, videoId),
+            ChavesObjetoVideo.Original(userId, videoId),
+            ChavesObjetoVideo.Result(userId, videoId),
             Now);
     }
 
@@ -330,60 +336,60 @@ public sealed class VideoApiTests
         }
     }
 
-    private sealed class ApiInMemoryVideoDataStore : IVideoDataStore
+    private sealed class ApiInMemoryVideoDataStore : IRepositorioVideo
     {
         private readonly List<Video> _videos = [];
 
-        public Task AddAsync(Video video, CancellationToken cancellationToken)
+        public Task AdicionarAsync(Video video, CancellationToken cancellationToken)
         {
             _videos.Add(video);
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<Video>> ListByUserAsync(string userId, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<Video>> ListarPorUsuarioAsync(string userId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<Video>>(_videos.Where(video => video.UserId == userId).ToArray());
 
-        public Task<Video?> GetByUserAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
+        public Task<Video?> ObterPorUsuarioAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             Task.FromResult(_videos.FirstOrDefault(video => video.Id == videoId && video.UserId == userId));
 
-        public Task<Video?> GetByIdAsync(Guid videoId, CancellationToken cancellationToken) =>
+        public Task<Video?> ObterPorIdAsync(Guid videoId, CancellationToken cancellationToken) =>
             Task.FromResult(_videos.FirstOrDefault(video => video.Id == videoId));
 
-        public Task SaveChangesAsync(CancellationToken cancellationToken) =>
+        public Task SalvarAlteracoesAsync(CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
         public void Seed(Video video) => _videos.Add(video);
     }
 
-    private sealed class ApiInMemoryVideoCache : IVideoCache
+    private sealed class ApiInMemoryVideoCache : ICacheVideo
     {
-        public Task<IReadOnlyList<VideoResponse>?> GetVideosAsync(string userId, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<VideoResponse>?> ObterVideosAsync(string userId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<VideoResponse>?>(null);
 
-        public Task<VideoResponse?> GetVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
+        public Task<VideoResponse?> ObterVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             Task.FromResult<VideoResponse?>(null);
 
-        public Task SetVideosAsync(string userId, IReadOnlyList<VideoResponse> videos, CancellationToken cancellationToken) =>
+        public Task SalvarVideosAsync(string userId, IReadOnlyList<VideoResponse> videos, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
-        public Task SetVideoAsync(string userId, Guid videoId, VideoResponse video, CancellationToken cancellationToken) =>
+        public Task SalvarVideoAsync(string userId, Guid videoId, VideoResponse video, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
-        public Task RemoveVideosAsync(string userId, CancellationToken cancellationToken) =>
+        public Task RemoverVideosAsync(string userId, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
-        public Task RemoveVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
+        public Task RemoverVideoAsync(string userId, Guid videoId, CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 
-    private sealed class ApiStubVideoStorage : IVideoStorage
+    private sealed class ApiStubVideoStorage : IArmazenamentoVideo
     {
-        public Task<PresignedUrl> CreateUploadUrlAsync(string objectKey, string contentType, CancellationToken cancellationToken) =>
-            Task.FromResult(new PresignedUrl("http://localhost:9000/upload", 900));
+        public Task<UrlPreAssinada> CriarUrlUploadAsync(string objectKey, string contentType, CancellationToken cancellationToken) =>
+            Task.FromResult(new UrlPreAssinada("http://localhost:9000/upload", 900));
 
-        public Task<PresignedUrl> CreateDownloadUrlAsync(string objectKey, CancellationToken cancellationToken) =>
-            Task.FromResult(new PresignedUrl("http://localhost:9000/download", 900));
+        public Task<UrlPreAssinada> CriarUrlDownloadAsync(string objectKey, CancellationToken cancellationToken) =>
+            Task.FromResult(new UrlPreAssinada("http://localhost:9000/download", 900));
     }
 
-    private sealed record ApiFixedClock(DateTimeOffset UtcNow) : IClock;
+    private sealed record ApiFixedClock(DateTimeOffset UtcNow) : IRelogio;
 }

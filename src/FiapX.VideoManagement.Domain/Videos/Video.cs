@@ -1,4 +1,4 @@
-using FiapX.VideoManagement.Domain.Common;
+using FiapX.VideoManagement.Domain.Comum;
 
 namespace FiapX.VideoManagement.Domain.Videos;
 
@@ -45,7 +45,7 @@ public sealed class Video
     public DateTimeOffset? ProcessingFinishedAt { get; private set; }
     public uint Version { get; private set; }
 
-    public static Video Register(
+    public static Video Registrar(
         Guid id,
         string userId,
         string userEmail,
@@ -56,18 +56,18 @@ public sealed class Video
     {
         if (id == Guid.Empty)
         {
-            throw new DomainException("VideoId is required.");
+            throw new ExcecaoDominio("VideoId é obrigatório.");
         }
 
         return new Video(id, userId, userEmail, originalFileName, originalObjectKey, resultObjectKey, createdAt);
     }
 
-    public bool BelongsTo(string userId) =>
+    public bool PertenceAoUsuario(string userId) =>
         string.Equals(UserId, userId, StringComparison.Ordinal);
 
-    public void MarkProcessing(DateTimeOffset startedAt)
+    public void MarcarProcessando(DateTimeOffset startedAt)
     {
-        EnsureStatus(VideoStatus.Recebido, "Only received videos can start processing.");
+        GarantirStatus(VideoStatus.Recebido, "Somente vídeos recebidos podem iniciar processamento.");
 
         Status = VideoStatus.Processando;
         ProcessingStartedAt = startedAt;
@@ -75,9 +75,9 @@ public sealed class Video
         ErrorMessage = null;
     }
 
-    public void MarkCompleted(string resultObjectKey, DateTimeOffset finishedAt)
+    public void MarcarConcluido(string resultObjectKey, DateTimeOffset finishedAt)
     {
-        EnsureStatus(VideoStatus.Processando, "Only processing videos can be completed.");
+        GarantirStatus(VideoStatus.Processando, "Somente vídeos em processamento podem ser concluídos.");
 
         Status = VideoStatus.Concluido;
         ResultObjectKey = Required(resultObjectKey, nameof(resultObjectKey), 500);
@@ -86,9 +86,9 @@ public sealed class Video
         ErrorMessage = null;
     }
 
-    public void MarkFailed(string sanitizedErrorMessage, DateTimeOffset finishedAt)
+    public void MarcarErro(string sanitizedErrorMessage, DateTimeOffset finishedAt)
     {
-        EnsureStatus(VideoStatus.Processando, "Only processing videos can fail.");
+        GarantirStatus(VideoStatus.Processando, "Somente vídeos em processamento podem falhar.");
 
         Status = VideoStatus.Erro;
         ErrorCode = "PROCESSING_FAILED";
@@ -96,10 +96,10 @@ public sealed class Video
         ProcessingFinishedAt = finishedAt;
     }
 
-    public void MarkCompletedFromProcessingEvent(string resultObjectKey, DateTimeOffset finishedAt)
+    public void MarcarConcluidoPorEventoProcessamento(string resultObjectKey, DateTimeOffset finishedAt)
     {
-        EnsureStatusForTerminalTransition();
-        EnsureFinishedAtDoesNotPrecedeStartedAt(finishedAt);
+        GarantirStatusParaTransicaoTerminal();
+        GarantirFimNaoAnteriorAoInicio(finishedAt);
 
         Status = VideoStatus.Concluido;
         ResultObjectKey = Required(resultObjectKey, nameof(resultObjectKey), 500);
@@ -108,10 +108,10 @@ public sealed class Video
         ErrorMessage = null;
     }
 
-    public void MarkFailedFromProcessingEvent(string errorCode, string sanitizedErrorMessage, DateTimeOffset finishedAt)
+    public void MarcarErroPorEventoProcessamento(string errorCode, string sanitizedErrorMessage, DateTimeOffset finishedAt)
     {
-        EnsureStatusForTerminalTransition();
-        EnsureFinishedAtDoesNotPrecedeStartedAt(finishedAt);
+        GarantirStatusParaTransicaoTerminal();
+        GarantirFimNaoAnteriorAoInicio(finishedAt);
 
         Status = VideoStatus.Erro;
         ErrorCode = Required(errorCode, nameof(errorCode), 100);
@@ -119,40 +119,40 @@ public sealed class Video
         ProcessingFinishedAt = finishedAt;
     }
 
-    public void EnsureCanDownload()
+    public void GarantirDownloadDisponivel()
     {
         if (Status != VideoStatus.Concluido)
         {
-            throw new DomainException("Video result is not available for download.");
+            throw new ExcecaoDominio("O vídeo ainda não está disponível para download.");
         }
 
         if (string.IsNullOrWhiteSpace(ResultObjectKey))
         {
-            throw new DomainException("Video result object key is missing.");
+            throw new ExcecaoDominio("A chave do resultado do vídeo está ausente.");
         }
     }
 
-    private void EnsureStatus(VideoStatus expectedStatus, string message)
+    private void GarantirStatus(VideoStatus expectedStatus, string message)
     {
         if (Status != expectedStatus)
         {
-            throw new DomainException(message);
+            throw new ExcecaoDominio(message);
         }
     }
 
-    private void EnsureStatusForTerminalTransition()
+    private void GarantirStatusParaTransicaoTerminal()
     {
         if (Status is not VideoStatus.Recebido and not VideoStatus.Processando)
         {
-            throw new DomainException("Only received or processing videos can reach a terminal processing status.");
+            throw new ExcecaoDominio("Somente vídeos recebidos ou em processamento podem chegar a um status terminal.");
         }
     }
 
-    private void EnsureFinishedAtDoesNotPrecedeStartedAt(DateTimeOffset finishedAt)
+    private void GarantirFimNaoAnteriorAoInicio(DateTimeOffset finishedAt)
     {
         if (ProcessingStartedAt.HasValue && finishedAt < ProcessingStartedAt.Value)
         {
-            throw new DomainException("Processing finish time cannot precede processing start time.");
+            throw new ExcecaoDominio("A data de fim do processamento não pode ser anterior à data de início.");
         }
     }
 
@@ -160,13 +160,13 @@ public sealed class Video
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new DomainException($"{name} is required.");
+            throw new ExcecaoDominio($"{name} é obrigatório.");
         }
 
         var trimmed = value.Trim();
         if (trimmed.Length > maxLength)
         {
-            throw new DomainException($"{name} must be at most {maxLength} characters.");
+            throw new ExcecaoDominio($"{name} deve ter no máximo {maxLength} caracteres.");
         }
 
         return trimmed;

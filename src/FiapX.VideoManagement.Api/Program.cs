@@ -1,11 +1,11 @@
 using System.Diagnostics;
-using FiapX.VideoManagement.Api.Identity;
-using FiapX.VideoManagement.Api.Videos;
-using FiapX.VideoManagement.Application.Abstractions;
-using FiapX.VideoManagement.Application.Common;
-using FiapX.VideoManagement.Domain.Common;
+using FiapX.VideoManagement.Api.Autenticacao;
+using FiapX.VideoManagement.Api.Endpoints;
+using FiapX.VideoManagement.Application.Portas;
+using FiapX.VideoManagement.Application.Comum;
+using FiapX.VideoManagement.Domain.Comum;
 using FiapX.VideoManagement.Infrastructure;
-using FiapX.VideoManagement.Infrastructure.Persistence;
+using FiapX.VideoManagement.Infrastructure.Persistencia;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -16,7 +16,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddVideoManagementInfrastructure(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentUser, JwtCurrentUser>();
+builder.Services.AddScoped<IUsuarioAtual, UsuarioAtualJwt>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -49,7 +49,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                 if (string.IsNullOrWhiteSpace(sub) || string.IsNullOrWhiteSpace(email))
                 {
-                    context.Fail("Token must contain sub and email claims.");
+                    context.Fail("O token deve conter as claims sub e email.");
                 }
 
                 return Task.CompletedTask;
@@ -97,24 +97,24 @@ static async Task WriteProblemDetailsAsync(HttpContext context, Exception except
 
     var statusCode = exception switch
     {
-        RequestValidationException or DomainException or BadHttpRequestException => StatusCodes.Status400BadRequest,
-        ResourceNotFoundException => StatusCodes.Status404NotFound,
-        ResourceConflictException => StatusCodes.Status409Conflict,
+        RequisicaoInvalidaException or ExcecaoDominio or BadHttpRequestException => StatusCodes.Status400BadRequest,
+        RecursoNaoEncontradoException => StatusCodes.Status404NotFound,
+        ConflitoRecursoException => StatusCodes.Status409Conflict,
         _ => StatusCodes.Status500InternalServerError
     };
 
     if (statusCode >= StatusCodes.Status500InternalServerError)
     {
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ProblemDetails");
-        logger.LogError(exception, "Unhandled request error.");
+        logger.LogError(exception, "Erro não tratado na requisição.");
     }
 
     var title = statusCode switch
     {
-        StatusCodes.Status400BadRequest => "Invalid request.",
-        StatusCodes.Status404NotFound => "Resource not found.",
-        StatusCodes.Status409Conflict => "Request conflict.",
-        _ => "Unexpected error."
+        StatusCodes.Status400BadRequest => "Requisição inválida.",
+        StatusCodes.Status404NotFound => "Recurso não encontrado.",
+        StatusCodes.Status409Conflict => "Conflito na requisição.",
+        _ => "Erro inesperado."
     };
 
     context.Response.Clear();
