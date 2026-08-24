@@ -5,6 +5,7 @@ using FiapX.VideoManagement.Application.Videos;
 using FiapX.VideoManagement.Infrastructure.Cache;
 using FiapX.VideoManagement.Infrastructure.Mail;
 using FiapX.VideoManagement.Infrastructure.Persistence;
+using FiapX.VideoManagement.Infrastructure.RabbitMq;
 using FiapX.VideoManagement.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -42,6 +43,11 @@ public static class DependencyInjection
 
         services.AddSingleton(SmtpNotificationOptions.FromConfiguration(configuration));
         services.AddSingleton<INotificationSender, SmtpNotificationSender>();
+
+        services.AddSingleton(RabbitMqOptions.FromConfiguration(configuration));
+        services.AddSingleton(StatusConsumerOptions.FromConfiguration(configuration));
+        services.AddSingleton<StatusEventDispatcher>();
+        services.AddHostedService<RabbitMqStatusConsumer>();
 
         return services;
     }

@@ -24,6 +24,27 @@ Servicos:
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 - Mailpit: `http://localhost:8025`
+- RabbitMQ Management: `http://localhost:15672`
+
+## RabbitMQ e status assincrono
+
+A API HTTP nao depende do RabbitMQ para subir. O consumer de status roda em `BackgroundService`, faz retry inicial com backoff e reconecta quando o broker volta.
+
+Topologia consumida pelo Management:
+
+```text
+video.events -- video.processing.started --> video.status-updates
+video.events -- video.processing.completed --> video.status-updates
+video.events -- video.processing.failed --> video.status-updates
+
+video.status.retry.exchange -- started/completed/failed --> video.status-updates.retry
+video.status-updates.retry -- DLX video.events, sem routing key fixa --> video.status-updates
+video.status-updates -- DLX video.status.dlx/video.status.dlq --> video.status-updates.dlq
+```
+
+Os DTOs JSON continuam sem `eventType`; o dispatch usa a routing key. Redis e SMTP sao best-effort e nao provocam retry do evento.
+
+As filas de negocio sao quorum queues. No Docker Compose local ha somente um broker RabbitMQ; quorum e usado aqui para durabilidade/dead-lettering mais seguro, nao para alta disponibilidade real.
 
 ## Mailpit e notificacoes
 
@@ -122,6 +143,15 @@ dotnet restore .\FiapX.VideoManagementService.sln --configfile .\NuGet.Config
 dotnet build .\FiapX.VideoManagementService.sln --no-restore
 dotnet test .\FiapX.VideoManagementService.sln --no-build
 docker compose config
+```
+
+E2E RabbitMQ completo, a partir da raiz do repositorio:
+
+```powershell
+$env:KEYCLOAK_ADMIN_USERNAME = 'admin'
+$env:KEYCLOAK_ADMIN_PASSWORD = '<senha-local-admin-keycloak>'
+$env:FIAPX_E2E_ALICE_PASSWORD = '<senha-local-da-alice>'
+.\scripts\e2e-rabbitmq.ps1
 ```
 
 Testes reais opt-in:
