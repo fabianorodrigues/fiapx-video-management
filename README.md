@@ -2,17 +2,23 @@
 
 Microsservico .NET 10 para registrar videos, listar status e gerar URLs presigned para upload/download no MinIO.
 
-## Execucao local
+## Execucao local independente
 
-Na raiz compartilhada `C:\Projetos\fiap-fase5`:
+Este repo possui um ambiente Docker local para desenvolvimento/teste isolado:
 
 ```powershell
-$env:KEYCLOAK_ADMIN_USERNAME = 'admin'
-$env:KEYCLOAK_ADMIN_PASSWORD = '<senha-local-admin-keycloak>'
+docker compose -f docker-compose.local.yml up -d --build
 ```
 
+O Compose local usa `name: fiapx-video-management-local`, cria containers,
+network e volumes proprios, e nao depende do Processor nem do ambiente integrado.
+As portas sao as mesmas do ambiente integrado; execute apenas um ambiente por vez.
+Antes de subir, verifique se as portas abaixo estao livres.
+
+Para parar preservando volumes locais:
+
 ```powershell
-docker compose up -d --build
+docker compose -f docker-compose.local.yml down
 ```
 
 Servicos:
@@ -25,6 +31,9 @@ Servicos:
 - Redis: `localhost:6379`
 - Mailpit: `http://localhost:8025`
 - RabbitMQ Management: `http://localhost:15672`
+
+Credenciais no `docker-compose.local.yml` e fixtures em `docker/local/` sao
+exclusivamente DEMO/local. Nao reutilize em nenhum ambiente real.
 
 ## RabbitMQ e status assincrono
 
@@ -73,9 +82,10 @@ SMTP_PORT=1025
 
 Nao use `localhost` dentro do container da API para acessar o Mailpit, pois ele apontaria para o proprio container.
 
-## Keycloak local
+## Keycloak local independente
 
-O realm `fiapx` e os clients sao importados por `../keycloak/fiapx-realm.json`.
+O realm `fiapx`, clients e usuarios DEMO sao importados por
+`docker/local/keycloak/fiapx-realm.json`.
 
 Topologia local:
 
@@ -89,25 +99,27 @@ Clients:
 - `fiapx-postman`: client publico para Postman/cURL, com Direct Access Grants habilitado somente para demonstracao local.
 - `video-management-service`: audience/resource server da API, sem Direct Access Grants.
 
-Crie manualmente dois usuarios no realm `fiapx`, ambos com e-mail verificado ou preenchido:
+Usuarios DEMO provisionados pela fixture:
 
-- `alice`, e-mail `alice@fiapx.local`
-- `bob`, e-mail `bob@fiapx.local`
+- `usertest1`, e-mail `usertest1@fiapx.local`
+- `usertest2`, e-mail `usertest2@fiapx.local`
 
-Nao versione senhas. Defina senhas locais descartaveis pela UI do Keycloak.
+As senhas sao locais/DEMO e estao restritas ao Compose/fixture local.
+O `UserId` da aplicacao nao e o username: sempre extraia o claim `sub` do token
+e use esse valor em object keys e eventos.
 
 Exemplo para obter access token:
 
 ```powershell
-$aliceToken = (Invoke-RestMethod `
+$userTest1Token = (Invoke-RestMethod `
   -Method Post `
   -Uri 'http://localhost:8081/realms/fiapx/protocol/openid-connect/token' `
   -ContentType 'application/x-www-form-urlencoded' `
   -Body @{
     grant_type = 'password'
     client_id = 'fiapx-postman'
-    username = 'alice'
-    password = '<senha-local-da-alice>'
+    username = 'usertest1'
+    password = 'fiapx_usertest1_demo_password'
   }).access_token
 ```
 
@@ -132,7 +144,7 @@ Exemplo:
 
 ```powershell
 $body = @{ fileName = 'video.mp4'; contentType = 'video/mp4' } | ConvertTo-Json
-$video = Invoke-RestMethod -Method Post -Uri 'http://localhost:8080/videos' -Headers @{ Authorization = "Bearer $aliceToken" } -ContentType 'application/json' -Body $body
+$video = Invoke-RestMethod -Method Post -Uri 'http://localhost:8080/videos' -Headers @{ Authorization = "Bearer $userTest1Token" } -ContentType 'application/json' -Body $body
 Invoke-WebRequest -Method Put -Uri $video.uploadUrl -ContentType 'video/mp4' -InFile '.\video.mp4'
 ```
 
@@ -142,15 +154,15 @@ Invoke-WebRequest -Method Put -Uri $video.uploadUrl -ContentType 'video/mp4' -In
 dotnet restore .\FiapX.VideoManagementService.sln --configfile .\NuGet.Config
 dotnet build .\FiapX.VideoManagementService.sln --no-restore
 dotnet test .\FiapX.VideoManagementService.sln --no-build
-Push-Location ..; docker compose config; Pop-Location
+docker compose -f docker-compose.local.yml config
 ```
 
-E2E RabbitMQ completo, a partir da raiz compartilhada `C:\Projetos\fiap-fase5`:
+E2E RabbitMQ completo do ambiente integrado:
 
 ```powershell
 $env:KEYCLOAK_ADMIN_USERNAME = 'admin'
 $env:KEYCLOAK_ADMIN_PASSWORD = '<senha-local-admin-keycloak>'
-$env:FIAPX_E2E_ALICE_PASSWORD = '<senha-local-da-alice>'
+$env:FIAPX_E2E_USERTEST1_PASSWORD = '<senha-local-demo>'
 .\scripts\e2e-rabbitmq.ps1
 ```
 
