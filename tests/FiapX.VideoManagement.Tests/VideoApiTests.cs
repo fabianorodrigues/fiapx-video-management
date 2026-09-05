@@ -47,6 +47,19 @@ public sealed class VideoApiTests
     }
 
     [Fact]
+    public async Task Swagger_is_available_in_development()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var uiResponse = await client.GetAsync("/swagger/index.html");
+        var jsonResponse = await client.GetAsync("/swagger/v1/swagger.json");
+
+        Assert.Equal(HttpStatusCode.OK, uiResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, jsonResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task Get_videos_without_jwt_returns_unauthorized()
     {
         await using var factory = CreateFactory();
