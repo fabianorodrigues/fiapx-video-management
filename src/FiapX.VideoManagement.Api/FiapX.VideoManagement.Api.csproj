@@ -6,6 +6,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
 
     <ProjectReference Include="..\FiapX.VideoManagement.Application\FiapX.VideoManagement.Application.csproj" />
     <ProjectReference Include="..\FiapX.VideoManagement.Infrastructure\FiapX.VideoManagement.Infrastructure.csproj" />
