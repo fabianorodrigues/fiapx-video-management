@@ -1,6 +1,7 @@
 param(
     [string]$InfraPath = $env:DEPLOY_INFRA_PATH,
-    [string]$NewImage = $env:DEPLOY_IMAGE
+    [string]$NewImage = $env:DEPLOY_IMAGE,
+    [string]$DeploySha = $env:DEPLOY_SHA
 )
 
 Set-StrictMode -Version Latest
@@ -34,6 +35,18 @@ function Assert-NotBlank {
 
     if ([string]::IsNullOrWhiteSpace($Value)) {
         throw "$Name must not be empty."
+    }
+}
+
+function Assert-CommitSha {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [AllowNull()][string]$Value
+    )
+
+    Assert-NotBlank -Name $Name -Value $Value
+    if ($Value -notmatch '^[a-fA-F0-9]{40}$') {
+        throw "$Name must be a full 40-character commit SHA."
     }
 }
 
@@ -76,7 +89,10 @@ function Assert-PathExists {
 }
 
 function Assert-DeployImage {
-    param([Parameter(Mandatory = $true)][string]$Image)
+    param(
+        [Parameter(Mandatory = $true)][string]$Image,
+        [Parameter(Mandatory = $true)][string]$ExpectedSha
+    )
 
     if ($Image -match '(^|:)latest$') {
         throw 'Deploy image must never use latest.'
@@ -86,11 +102,10 @@ function Assert-DeployImage {
         throw "Deploy image must include an explicit tag: $Image"
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) {
-        $expectedSuffix = ":$($env:GITHUB_SHA)"
-        if (-not $Image.EndsWith($expectedSuffix, [StringComparison]::OrdinalIgnoreCase)) {
-            throw "DEPLOY_IMAGE must end with the current GitHub SHA $expectedSuffix."
-        }
+    Assert-CommitSha -Name 'DEPLOY_SHA/DeploySha' -Value $ExpectedSha
+    $expectedSuffix = ":$ExpectedSha"
+    if (-not $Image.EndsWith($expectedSuffix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "DEPLOY_IMAGE must end with DEPLOY_SHA $expectedSuffix."
     }
 }
 
@@ -339,11 +354,6 @@ function Add-StepSummary {
         return
     }
 
-    $sha = $env:GITHUB_SHA
-    if ([string]::IsNullOrWhiteSpace($sha) -and $NewImage.Contains(':')) {
-        $sha = $NewImage.Substring($NewImage.LastIndexOf(':') + 1)
-    }
-
     $lines = @(
         '### Deploy Management',
         '',
@@ -352,7 +362,7 @@ function Add-StepSummary {
         "| Service | $ServiceName |",
         "| Previous image | $script:PreviousImage |",
         "| New image | $NewImage |",
-        "| GitHub SHA | $sha |",
+        "| Deploy SHA | $DeploySha |",
         "| Runtime Image ID | $script:RuntimeImageId |",
         "| Migration | PASS |",
         "| Docker health | PASS |",
@@ -389,7 +399,7 @@ function Report-Divergence {
 function Invoke-Deploy {
     Assert-NotBlank -Name 'DEPLOY_INFRA_PATH/InfraPath' -Value $InfraPath
     Assert-NotBlank -Name 'DEPLOY_IMAGE/NewImage' -Value $NewImage
-    Assert-DeployImage $NewImage
+    Assert-DeployImage -Image $NewImage -ExpectedSha $DeploySha
 
     $resolvedInfraPath = (Resolve-Path -LiteralPath $InfraPath).Path
     $script:ComposeFile = Join-Path $resolvedInfraPath 'docker-compose.yml'
