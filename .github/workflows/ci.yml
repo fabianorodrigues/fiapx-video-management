@@ -145,7 +145,7 @@ jobs:
           persist-credentials: false
 
       - name: Runner environment info
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: |
           $PSVersionTable
           docker version
@@ -153,5 +153,5 @@ jobs:
           docker ps
 
       - name: Deploy Management
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -File {0}
         run: .\.github\scripts\deploy-management.ps1
