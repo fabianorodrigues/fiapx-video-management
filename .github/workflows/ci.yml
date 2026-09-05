@@ -125,3 +125,33 @@ jobs:
             echo "SHA: ${{ github.sha }}"
             echo "Digest: ${{ steps.push.outputs.digest }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy Management
+    needs: publish-image
+    runs-on: [self-hosted, Windows, X64, fiap-fase5]
+    timeout-minutes: 30
+    if: ${{ needs.publish-image.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: read
+    env:
+      DEPLOY_INFRA_PATH: ${{ vars.DEPLOY_INFRA_PATH }}
+      DEPLOY_IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Runner environment info
+        shell: powershell
+        run: |
+          $PSVersionTable
+          docker version
+          docker compose version
+          docker ps
+
+      - name: Deploy Management
+        shell: powershell
+        run: .\.github\scripts\deploy-management.ps1
