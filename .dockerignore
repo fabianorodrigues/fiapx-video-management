@@ -4,3 +4,9 @@
 .vs/
 .vscode/
 TestResults/
+.env
+.env.local
+.idea/
+*.user
+*.suo
+artifacts/

@@ -1,0 +1,199 @@
+name: fiapx-video-management-local
+
+x-video-management-build: &video-management-build
+  context: .
+  dockerfile: src/FiapX.VideoManagement.Api/Dockerfile
+
+x-video-management-environment: &video-management-environment
+  ASPNETCORE_ENVIRONMENT: Development
+  ASPNETCORE_URLS: http://+:8080
+  POSTGRES_CONNECTION_STRING: Host=postgres;Port=5432;Database=fiapx_videos;Username=fiapx;Password=fiapx_local_postgres_demo_password
+  REDIS_CONNECTION_STRING: redis:6379
+  CACHE_TTL_SECONDS: "30"
+  JWT_METADATA_ADDRESS: http://keycloak:8080/realms/fiapx/.well-known/openid-configuration
+  JWT_ISSUER: http://localhost:8081/realms/fiapx
+  JWT_AUDIENCE: video-management-service
+  MINIO_INTERNAL_ENDPOINT: http://minio:9000
+  MINIO_PUBLIC_ENDPOINT: http://localhost:9000
+  MINIO_ACCESS_KEY: fiapx-dev
+  MINIO_SECRET_KEY: fiapx_local_minio_demo_password
+  MINIO_BUCKET: videos
+  MINIO_REGION: us-east-1
+  PRESIGNED_URL_EXPIRES_SECONDS: "900"
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  SMTP_FROM: no-reply@fiapx.local
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_USERNAME: fiapx
+  RABBITMQ_PASSWORD: fiapx_local_rabbitmq_demo_password
+  RABBITMQ_VHOST: /
+  STATUS_MAX_ATTEMPTS: "3"
+  STATUS_RETRY_DELAY_MS: "5000"
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.1
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: fiapx_local_keycloak_admin_demo_password
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./docker/local/keycloak:/opt/keycloak/data/import:ro
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: fiapx_videos
+      POSTGRES_USER: fiapx
+      POSTGRES_PASSWORD: fiapx_local_postgres_demo_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.22.3
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  rabbitmq:
+    image: rabbitmq:4.1.8-management
+    command: >
+      sh -ec '
+        rm -f /tmp/fiapx-definitions-imported
+        (
+          set -e
+          until rabbitmqctl await_startup --timeout 30; do
+            echo "waiting for RabbitMQ startup"
+            sleep 2
+          done
+          user="$${RABBITMQ_DEFAULT_USER}"
+          pass="$${RABBITMQ_DEFAULT_PASS}"
+          if rabbitmqctl list_users --silent | cut -f1 | grep -qx "$$user"; then
+            rabbitmqctl change_password "$$user" "$$pass"
+          else
+            rabbitmqctl add_user "$$user" "$$pass"
+          fi
+          rabbitmqctl set_user_tags "$$user" administrator
+          rabbitmqctl add_vhost / || true
+          rabbitmqctl set_permissions -p / "$$user" ".*" ".*" ".*"
+          rabbitmqctl import_definitions /etc/rabbitmq/definitions.json
+          touch /tmp/fiapx-definitions-imported
+        ) &
+        exec rabbitmq-server
+      '
+    environment:
+      RABBITMQ_DEFAULT_USER: fiapx
+      RABBITMQ_DEFAULT_PASS: fiapx_local_rabbitmq_demo_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./docker/local/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping && test -f /tmp/fiapx-definitions-imported"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: fiapx-dev
+      MINIO_ROOT_PASSWORD: fiapx_local_minio_demo_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: fiapx-dev
+      MINIO_ROOT_PASSWORD: fiapx_local_minio_demo_password
+      MINIO_BUCKET: videos
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "set -eu
+      && mc alias set local http://minio:9000 \"$${MINIO_ROOT_USER}\" \"$${MINIO_ROOT_PASSWORD}\"
+      && mc mb --ignore-existing \"local/$${MINIO_BUCKET}\"
+      && mc anonymous set none \"local/$${MINIO_BUCKET}\""
+
+  video-management-migrations:
+    image: fiapx-video-management:local
+    build: *video-management-build
+    command: ["dotnet", "FiapX.VideoManagement.Api.dll", "--migrate"]
+    environment: *video-management-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  video-management-service:
+    image: fiapx-video-management:local
+    build: *video-management-build
+    environment: *video-management-environment
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      video-management-migrations:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  rabbitmq-data:
