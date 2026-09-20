@@ -7,6 +7,7 @@ API HTTP da solução FiapX para autenticar requisições, registrar vídeos, ge
 [![Postman](https://img.shields.io/badge/Postman-collection-FF6C37?logo=postman&logoColor=white)](postman/fiapx-video-management.postman_collection.json)
 [![CI](https://github.com/fabianorodrigues/fiapx-video-management/actions/workflows/ci.yml/badge.svg)](https://github.com/fabianorodrigues/fiapx-video-management/actions/workflows/ci.yml)
 [![CD](https://github.com/fabianorodrigues/fiapx-video-management/actions/workflows/cd.yml/badge.svg)](https://github.com/fabianorodrigues/fiapx-video-management/actions/workflows/cd.yml)
+[![Coverage](.github/badges/coverage.svg)](https://github.com/fabianorodrigues/fiapx-video-management/actions/workflows/ci.yml)
 
 ## Sumário
 
@@ -94,7 +95,16 @@ Variáveis consumidas pela API nos Compose atuais:
 | `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `RABBITMQ_VHOST` | MANUAL OBRIGATÓRIO fora do Compose | Consumer de status |
 | `STATUS_MAX_ATTEMPTS`, `STATUS_RETRY_DELAY_MS` | OPCIONAL | Retry de eventos de status |
 
-Credenciais DEMO presentes nos arquivos versionados de Compose/fixtures são exclusivamente DEMO/local, existem propositalmente para demonstração e não devem ser usadas em ambiente real.
+Credenciais DEMO do ambiente integrado ficam em `fiapx-infra/.env.example`. Elas são exclusivamente DEMO/local.
+
+Para CD deste repositório, configure:
+
+```text
+Settings > Secrets and variables > Actions > Variables
+DEPLOY_INFRA_PATH=C:\Projetos\fiap-fase5\fiapx-infra
+```
+
+`DEPLOY_INFRA_PATH` aponta para a working copy operacional da Infra usada pelo script de deploy.
 
 ---
 
@@ -145,14 +155,23 @@ Condição validada no código:
 - A API exige as claims `sub` e `email`.
 - O `UserId` da aplicação é o claim `sub`, não o nome de usuário.
 
-Usuários DEMO oficiais versionados nas fixtures locais:
+Keycloak local:
+
+| Item | Valor |
+| --- | --- |
+| URL | `http://localhost:8081` |
+| Realm | `fiapx` |
+| Client Postman | `fiapx-postman` |
+| Caminho de usuários | `Manage realms > fiapx > Users` |
+
+Usuários DEMO oficiais:
 
 | Usuário | E-mail |
 | --- | --- |
 | `usertest1` | `usertest1@fiapx.local` |
 | `usertest2` | `usertest2@fiapx.local` |
 
-As senhas DEMO desses usuários estão versionadas propositalmente nas fixtures locais para demonstração, são exclusivamente DEMO/local e não devem ser usadas em ambiente real.
+As senhas DEMO desses usuários ficam nas fixtures locais e no `fiapx-infra/.env.example`.
 
 Exemplo de token no ambiente local:
 
@@ -178,7 +197,7 @@ $token = (Invoke-RestMethod `
 | `GET` | `/health` | Não | Health check da API |
 | `POST` | `/videos` | Sim | Cria registro `RECEBIDO` e devolve `uploadUrl` |
 | `GET` | `/videos` | Sim | Lista vídeos do usuário autenticado |
-| `GET` | `/videos/{videoId}` | Sim | Consulta detalhe do vídeo do usuário |
+| `GET` | `/videos/{videoId}` | Sim | Consulta detalhe/status do vídeo |
 | `GET` | `/videos/{videoId}/download` | Sim | Devolve `downloadUrl` se o vídeo estiver `CONCLUIDO` |
 
 Criar vídeo:
@@ -266,11 +285,11 @@ Arquivos versionados:
 Como usar:
 
 1. Suba o ambiente integrado pelo [fiapx-infra](https://github.com/fabianorodrigues/fiapx-infra) ou o Compose local deste repositório.
-2. Importe a collection e o environment no Postman.
-3. Selecione o environment `fiapx-video-management Local`.
-4. Configure `videoFilePath` com o caminho completo de um arquivo `.mp4` local.
-5. Ajuste no environment os dois conjuntos de credenciais de usuário para os usuários DEMO oficiais `usertest1` e `usertest2`.
-6. Rode a collection `FIAP X - fiapx-video-management` no Runner, em ordem.
+2. Importe a Collection e o Environment no Postman.
+3. Selecione o Environment `fiapx-video-management Local`.
+4. Configure `videoFilePath` com o caminho absoluto de um arquivo `.mp4` local.
+5. Habilite leitura do arquivo local no Postman se necessário em `Settings > Working Directory`.
+6. Rode a Collection `FIAP X - fiapx-video-management` no Runner, em ordem.
 
 O Runner valida:
 
@@ -285,6 +304,13 @@ O Runner valida:
 - respostas `400`, `401`, `404` e isolamento entre usuários.
 
 Para o fluxo ponta a ponta com Worker, use o ambiente integrado da infra, envie o vídeo, aguarde `CONCLUIDO`, baixe `resultado.zip` e valide os frames no arquivo.
+
+Fluxo de erro simples:
+
+1. Aponte `videoFilePath` para um arquivo com extensão `.mp4`, mas conteúdo inválido.
+2. Registre e envie o upload.
+3. Consulte `GET /videos/{videoId}` até status `ERRO`.
+4. Acesse o Mailpit em `http://localhost:8025` e valide a notificação.
 
 ---
 
@@ -303,25 +329,38 @@ Pipeline:
 1. Configura .NET 10.
 2. Executa restore com `NuGet.Config`.
 3. Compila a solution `FiapX.VideoManagementService.sln`.
-4. Executa testes xUnit e publica `.trx` como artifact.
-5. Faz build Docker da API.
-6. Em `push main` com CI verde, publica imagem no GHCR.
+4. Executa testes xUnit com coverage Cobertura.
+5. Gera summary e badge SVG de coverage.
+6. Publica `.trx` e coverage como artifacts.
+7. Faz build Docker da API.
+8. Em `push main` com CI verde, publica imagem no GHCR.
 
 A publicação gera tag com o SHA do commit e também `latest`. O deploy usa a imagem por SHA imutável; `latest` não é a referência operacional do CD.
 
+O badge de coverage é gerado por `scripts/coverage-summary.ps1` a partir do `coverage.cobertura.xml`. O mesmo script falha o CI quando a cobertura de linhas fica abaixo de 85%. Em `push` na `main`, o workflow tenta atualizar `.github/badges/coverage.svg`; se essa etapa falhar, ela não bloqueia o fluxo de publicação.
+
+O escopo de coverage fica em `coverlet.runsettings`, excluindo código gerado, bootstrap e adapters externos que dependem de serviços em execução, como migrations, host, persistência, cache, S3 e conexões RabbitMQ. Componentes críticos com teste local determinístico, como o envio SMTP de falha, permanecem dentro do coverage.
+
 ### CD
 
-O workflow `.github/workflows/cd.yml` roda por `workflow_run` depois do CI verde em `main`. Ele usa `head_sha`, valida se o commit ainda é o HEAD atual da `main` e só então executa no runner self-hosted Windows com labels:
+O workflow `.github/workflows/cd.yml` roda por `workflow_run` depois do CI aprovado em `push` na `main`. Ele usa `head_sha`, valida se o commit ainda é o HEAD atual da `main` e só então executa no runner self-hosted Windows.
 
-```text
-self-hosted, Windows, X64, fiap-fase5
-```
+`workflow_dispatch` é útil para CI, mas o caminho normal de CI + CD completo é `push` ou merge na `main`.
 
-Variável necessária:
+Configuração necessária:
 
-```text
-DEPLOY_INFRA_PATH=<CAMINHO_DA_WORKING_COPY_DA_INFRA>
-```
+| Item | Valor |
+| --- | --- |
+| Runner directory | `C:\actions-runner-management` |
+| Runner name | `fiapx-management-deploy` |
+| Runner group | `Default` |
+| Additional labels | `fiap-fase5` |
+| Work folder | `_work` |
+| Run as service | `N` |
+| Labels esperadas | `self-hosted`, `Windows`, `X64`, `fiap-fase5` |
+| GitHub Variable | `DEPLOY_INFRA_PATH=C:\Projetos\fiap-fase5\fiapx-infra` |
+
+Crie a variável em `Settings > Secrets and variables > Actions > Variables`.
 
 O script `.github/scripts/deploy-management.ps1`:
 
@@ -346,17 +385,38 @@ dotnet test .\FiapX.VideoManagementService.sln --configuration Release --no-buil
 docker compose -f docker-compose.local.yml config --quiet
 ```
 
+Validação local com coverage:
+
+```powershell
+dotnet test .\FiapX.VideoManagementService.sln `
+  --configuration Release `
+  --no-build `
+  --logger "trx;LogFilePrefix=test-results" `
+  --results-directory TestResults `
+  --collect:"XPlat Code Coverage" `
+  --settings coverlet.runsettings
+
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\coverage-summary.ps1
+```
+
 Validação funcional mínima:
 
 1. Suba o ambiente.
 2. Valide `GET /health`.
-3. Autentique no Keycloak.
-4. Chame `POST /videos`.
-5. Faça upload do `.mp4` com a `uploadUrl`.
-6. Consulte `GET /videos/{videoId}` até `CONCLUIDO`.
-7. Chame `GET /videos/{videoId}/download`.
-8. Baixe `resultado.zip`.
-9. Abra o ZIP e confirme os frames PNG.
+3. Abra o Swagger em `http://localhost:8080/swagger`.
+4. Autentique no Keycloak.
+5. Chame `POST /videos`.
+6. Faça upload do `.mp4` com a `uploadUrl`.
+7. Consulte `GET /videos/{videoId}` até `CONCLUIDO`.
+8. Chame `GET /videos/{videoId}/download`.
+9. Baixe `resultado.zip`.
+10. Abra o ZIP e confirme os frames PNG.
+
+Validação de erro:
+
+1. Envie arquivo com extensão `.mp4`, mas conteúdo inválido.
+2. Aguarde status `ERRO`.
+3. Valide a notificação no Mailpit.
 
 ---
 

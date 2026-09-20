@@ -19,6 +19,8 @@ jobs:
     name: Build, Test and Docker
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: write
     env:
       DOTNET_NOLOGO: true
       DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -46,7 +48,14 @@ jobs:
 
       - name: Test
         id: tests
-        run: dotnet test FiapX.VideoManagementService.sln --configuration Release --no-build --logger "trx;LogFilePrefix=test-results" --results-directory TestResults
+        run: >
+          dotnet test FiapX.VideoManagementService.sln
+          --configuration Release
+          --no-build
+          --logger "trx;LogFilePrefix=test-results"
+          --results-directory TestResults
+          --collect:"XPlat Code Coverage"
+          --settings coverlet.runsettings
 
       - name: Upload test results
         if: ${{ always() && steps.tests.outcome != 'skipped' }}
@@ -56,6 +65,41 @@ jobs:
           path: TestResults/**/*.trx
           retention-days: 7
           if-no-files-found: error
+
+      - name: Generate coverage badge and summary
+        if: ${{ always() && steps.tests.outcome != 'skipped' }}
+        shell: pwsh
+        run: ./scripts/coverage-summary.ps1
+
+      - name: Upload coverage report
+        if: ${{ always() && steps.tests.outcome != 'skipped' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: |
+            TestResults/**/coverage.cobertura.xml
+            TestResults/coverage-summary.md
+            .github/badges/coverage.svg
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Update coverage badge on main
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- .github/badges/coverage.svg; then
+            echo "Coverage badge unchanged."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/badges/coverage.svg
+          git commit -m "chore: update coverage badge [skip ci]"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"
 
       - name: Docker environment info
         run: |
