@@ -39,20 +39,38 @@ public sealed class EnviadorNotificacaoSmtpTests
         Assert.Contains(videoId.ToString(), message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Decode_smtp_message_accepts_lf_only_quoted_printable_payload()
+    {
+        var rawMessage = """
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+            Content-Transfer-Encoding: quoted-printable
+
+            Falha segura para o usuario.=0D=0A=0D=0AVideoId: 11111111-1111-1111-1111-111111111111
+            """;
+
+        var message = DecodeSmtpMessage(rawMessage);
+
+        Assert.Contains("Falha segura para o usuario.", message, StringComparison.Ordinal);
+        Assert.Contains("11111111-1111-1111-1111-111111111111", message, StringComparison.Ordinal);
+    }
+
     private static string DecodeSmtpMessage(string rawMessage)
     {
-        var bodyStart = rawMessage.IndexOf("\r\n\r\n", StringComparison.Ordinal);
-        var body = bodyStart >= 0 ? rawMessage[(bodyStart + 4)..] : rawMessage;
+        var normalized = rawMessage.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        var bodyStart = normalized.IndexOf("\n\n", StringComparison.Ordinal);
+        var body = bodyStart >= 0 ? normalized[(bodyStart + 2)..] : normalized;
 
-        if (!rawMessage.Contains("Content-Transfer-Encoding: base64", StringComparison.OrdinalIgnoreCase))
+        if (!normalized.Contains("Content-Transfer-Encoding: base64", StringComparison.OrdinalIgnoreCase))
         {
-            return rawMessage.Contains("Content-Transfer-Encoding: quoted-printable", StringComparison.OrdinalIgnoreCase)
+            return normalized.Contains("Content-Transfer-Encoding: quoted-printable", StringComparison.OrdinalIgnoreCase)
                 ? DecodeQuotedPrintable(body)
                 : body;
         }
 
         var base64 = string.Concat(
-            body.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+            body.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Where(line => !line.StartsWith("--", StringComparison.Ordinal)));
 
         return Encoding.UTF8.GetString(Convert.FromBase64String(base64));
@@ -67,6 +85,12 @@ public sealed class EnviadorNotificacaoSmtpTests
             if (value[index] != '=' || index + 2 >= value.Length)
             {
                 bytes.Add((byte)value[index]);
+                continue;
+            }
+
+            if (value[index + 1] == '\n')
+            {
+                index++;
                 continue;
             }
 
