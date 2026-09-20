@@ -489,8 +489,8 @@
                   "",
                   "pm.test('Conflict uses ProblemDetails', function () {",
                   "    const problem = pm.response.json();",
-                  "    pm.expect(problem.title).to.eql('Request conflict.');",
-                  "    pm.expect(problem.detail).to.include('not available');",
+                  "    pm.expect(problem.title).to.eql('Conflito na requisição.');",
+                  "    pm.expect(problem.detail).to.include('não está disponível para download');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -532,7 +532,7 @@
                   "",
                   "pm.test('ProblemDetails explains content type', function () {",
                   "    const problem = pm.response.json();",
-                  "    pm.expect(problem.title).to.eql('Invalid request.');",
+                  "    pm.expect(problem.title).to.eql('Requisição inválida.');",
                   "    pm.expect(problem.detail).to.include('contentType');",
                   "});"
                 ],
@@ -582,7 +582,7 @@
                   "",
                   "pm.test('ProblemDetails explains MP4 rule', function () {",
                   "    const problem = pm.response.json();",
-                  "    pm.expect(problem.title).to.eql('Invalid request.');",
+                  "    pm.expect(problem.title).to.eql('Requisição inválida.');",
                   "    pm.expect(problem.detail).to.include('MP4');",
                   "});"
                 ],
@@ -632,7 +632,7 @@
                   "",
                   "pm.test('Not found uses ProblemDetails', function () {",
                   "    const problem = pm.response.json();",
-                  "    pm.expect(problem.title).to.eql('Resource not found.');",
+                  "    pm.expect(problem.title).to.eql('Recurso não encontrado.');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -668,7 +668,7 @@
                   "",
                   "pm.test('Not found uses ProblemDetails', function () {",
                   "    const problem = pm.response.json();",
-                  "    pm.expect(problem.title).to.eql('Resource not found.');",
+                  "    pm.expect(problem.title).to.eql('Recurso não encontrado.');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -881,7 +881,7 @@
                   "",
                   "pm.test('Cross-user access does not reveal resource existence', function () {",
                   "    const problem = pm.response.json();",
-                  "    pm.expect(problem.title).to.eql('Resource not found.');",
+                  "    pm.expect(problem.title).to.eql('Recurso não encontrado.');",
                   "});"
                 ],
                 "type": "text/javascript"
