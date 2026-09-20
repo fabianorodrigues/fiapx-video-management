@@ -153,7 +153,7 @@
                 "exec": [
                   "const videoFilePath = pm.environment.get('videoFilePath');",
                   "if (!videoFilePath || videoFilePath.includes('C:/Videos/meu-video.mp4')) {",
-                  "    throw new Error('Configure a variavel videoFilePath com o caminho completo de um arquivo .mp4 do seu computador.');",
+                  "    throw new Error('Configure videoFilePath com o caminho absoluto de um .mp4 e habilite Settings > Working Directory > Allow reading files outside working directory no Postman.');",
                   "}",
                   "",
                   "const fileName = videoFilePath.split(/[\\\\/]/).filter(Boolean).pop();",
@@ -244,8 +244,18 @@
                   "    throw new Error('uploadUrl is empty. Run \"02 - Create Video\" first.');",
                   "}",
                   "",
-                  "if (!pm.environment.get('videoFilePath')) {",
-                  "    throw new Error('videoFilePath is empty. Configure it with the full path to a local .mp4 file.');",
+                  "const videoFilePath = pm.environment.get('videoFilePath');",
+                  "if (!videoFilePath) {",
+                  "    throw new Error('videoFilePath is empty. Configure it with the absolute path of a .mp4 file and enable Settings > Working Directory > Allow reading files outside working directory in Postman.');",
+                  "}",
+                  "",
+                  "const fileName = videoFilePath.split(/[\\\\/]/).filter(Boolean).pop();",
+                  "if (!fileName || !fileName.toLowerCase().endsWith('.mp4')) {",
+                  "    throw new Error('videoFilePath must point to a .mp4 file.');",
+                  "}",
+                  "",
+                  "if (pm.environment.get('videoFileName') !== fileName) {",
+                  "    pm.environment.set('videoFileName', fileName);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -257,6 +267,13 @@
                 "exec": [
                   "pm.test('MinIO accepts upload using exactly the returned URL', function () {",
                   "    pm.expect([200, 204]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "pm.test('MinIO did not report an empty object upload', function () {",
+                  "    const etag = pm.response.headers.get('ETag');",
+                  "    if (etag) {",
+                  "        pm.expect(etag.replace(/\\\"/g, '').toLowerCase()).to.not.eql('d41d8cd98f00b204e9800998ecf8427e');",
+                  "    }",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -296,9 +313,43 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "if (!pm.environment.get('uploadedObjectUrl')) {",
-                  "    throw new Error('uploadedObjectUrl is empty. Run \"02 - Create Video\" first.');",
-                  "}"
+                  "function requireEnv(name) {",
+                  "    const value = pm.environment.get(name);",
+                  "    if (!value) {",
+                  "        throw new Error(`${name} is empty.`);",
+                  "    }",
+                  "    return value;",
+                  "}",
+                  "",
+                  "const objectUrl = requireEnv('uploadedObjectUrl');",
+                  "const accessKey = requireEnv('minioAccessKey');",
+                  "const secretKey = requireEnv('minioSecretKey');",
+                  "const region = requireEnv('minioRegion');",
+                  "const match = objectUrl.match(/^https?:\\/\\/([^/]+)(\\/[^?]*)/);",
+                  "if (!match) {",
+                  "    throw new Error(`uploadedObjectUrl is invalid: ${objectUrl}`);",
+                  "}",
+                  "",
+                  "const host = match[1];",
+                  "const canonicalUri = match[2].split('/').map(segment => encodeURIComponent(decodeURIComponent(segment))).join('/');",
+                  "const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';",
+                  "const amzDate = new Date().toISOString().replace(/[:-]|\\.\\d{3}/g, '');",
+                  "const dateStamp = amzDate.slice(0, 8);",
+                  "const service = 's3';",
+                  "const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';",
+                  "const canonicalHeaders = `host:${host}\\nx-amz-content-sha256:${payloadHash}\\nx-amz-date:${amzDate}\\n`;",
+                  "const canonicalRequest = `HEAD\\n${canonicalUri}\\n\\n${canonicalHeaders}\\n${signedHeaders}\\n${payloadHash}`;",
+                  "const scope = `${dateStamp}/${region}/${service}/aws4_request`;",
+                  "const stringToSign = `AWS4-HMAC-SHA256\\n${amzDate}\\n${scope}\\n${CryptoJS.SHA256(canonicalRequest).toString(CryptoJS.enc.Hex)}`;",
+                  "const kDate = CryptoJS.HmacSHA256(dateStamp, `AWS4${secretKey}`);",
+                  "const kRegion = CryptoJS.HmacSHA256(region, kDate);",
+                  "const kService = CryptoJS.HmacSHA256(service, kRegion);",
+                  "const kSigning = CryptoJS.HmacSHA256('aws4_request', kService);",
+                  "const signature = CryptoJS.HmacSHA256(stringToSign, kSigning).toString(CryptoJS.enc.Hex);",
+                  "",
+                  "pm.environment.set('minioAmzDate', amzDate);",
+                  "pm.environment.set('minioPayloadHash', payloadHash);",
+                  "pm.environment.set('minioAuthorization', `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`);"
                 ],
                 "type": "text/javascript"
               }
@@ -313,6 +364,13 @@
                   "",
                   "pm.test('Object Content-Type is video/mp4', function () {",
                   "    pm.expect(pm.response.headers.get('Content-Type')).to.include('video/mp4');",
+                  "});",
+                  "",
+                  "pm.test('Uploaded object is not empty', function () {",
+                  "    const contentLength = Number(pm.response.headers.get('Content-Length'));",
+                  "    const etag = (pm.response.headers.get('ETag') || '').replace(/\\\"/g, '').toLowerCase();",
+                  "    pm.expect(contentLength, 'Content-Length').to.be.above(0);",
+                  "    pm.expect(etag, 'ETag').to.not.eql('d41d8cd98f00b204e9800998ecf8427e');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -321,32 +379,23 @@
           ],
           "request": {
             "auth": {
-              "type": "awsv4",
-              "awsv4": [
-                {
-                  "key": "accessKey",
-                  "value": "{{minioAccessKey}}",
-                  "type": "string"
-                },
-                {
-                  "key": "secretKey",
-                  "value": "{{minioSecretKey}}",
-                  "type": "string"
-                },
-                {
-                  "key": "region",
-                  "value": "{{minioRegion}}",
-                  "type": "string"
-                },
-                {
-                  "key": "service",
-                  "value": "s3",
-                  "type": "string"
-                }
-              ]
+              "type": "noauth"
             },
             "method": "HEAD",
-            "header": [],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{minioAuthorization}}"
+              },
+              {
+                "key": "x-amz-date",
+                "value": "{{minioAmzDate}}"
+              },
+              {
+                "key": "x-amz-content-sha256",
+                "value": "{{minioPayloadHash}}"
+              }
+            ],
             "url": {
               "raw": "{{uploadedObjectUrl}}",
               "host": [
