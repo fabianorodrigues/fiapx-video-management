@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <ExcludeByFile>**/obj/**/*.cs,**/Migrations/**/*.cs,**/Program.cs,**/DependencyInjection.cs,**/Persistencia/**/*.cs,**/Armazenamento/**/*.cs,**/Cache/**/*.cs,**/Mensageria/RabbitMq/ConsumidorStatusRabbitMq.cs,**/Mensageria/RabbitMq/RabbitMqConnection.cs,**/Mensageria/RabbitMq/ConfirmedRabbitMqPublisher.cs,**/Mensageria/RabbitMq/RabbitMqOptions.cs,**/Mensageria/RabbitMq/StatusConsumerOptions.cs,**/Portas/**/*.cs,**/Autenticacao/UsuarioAtualDesenvolvimento.cs,**/Comum/RelogioSistema.cs</ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
