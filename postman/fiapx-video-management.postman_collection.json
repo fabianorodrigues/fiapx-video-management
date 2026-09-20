@@ -20,7 +20,7 @@
       "name": "01 - Happy Path",
       "item": [
         {
-          "name": "00 - Login Alice In Keycloak",
+          "name": "00 - Login Usertest1 In Keycloak",
           "event": [
             {
               "listen": "test",
@@ -32,7 +32,7 @@
                   "",
                   "const json = pm.response.json();",
                   "pm.environment.set('accessToken', json.access_token);",
-                  "pm.environment.set('aliceAccessToken', json.access_token);",
+                  "pm.environment.set('usertest1AccessToken', json.access_token);",
                   "",
                   "function decodeJwtPayload(token) {",
                   "    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
@@ -43,12 +43,12 @@
                   "const claims = decodeJwtPayload(json.access_token);",
                   "pm.environment.set('authenticatedUserId', claims.sub);",
                   "pm.environment.set('authenticatedEmail', claims.email);",
-                  "pm.environment.set('aliceUserId', claims.sub);",
+                  "pm.environment.set('usertest1UserId', claims.sub);",
                   "",
                   "pm.test('Access token has required claims for the API', function () {",
                   "    const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];",
                   "    pm.expect(claims.sub).to.be.a('string').and.not.empty;",
-                  "    pm.expect(claims.email).to.eql(pm.environment.get('aliceEmail'));",
+                  "    pm.expect(claims.email).to.eql(pm.environment.get('usertest1Email'));",
                   "    pm.expect(claims.iss).to.eql(pm.environment.get('keycloakBaseUrl') + '/realms/fiapx');",
                   "    pm.expect(aud).to.include(pm.environment.get('jwtAudience'));",
                   "    pm.expect(claims.exp).to.be.a('number');",
@@ -84,12 +84,12 @@
                 },
                 {
                   "key": "username",
-                  "value": "{{aliceUsername}}",
+                  "value": "{{usertest1Username}}",
                   "type": "text"
                 },
                 {
                   "key": "password",
-                  "value": "{{alicePassword}}",
+                  "value": "{{usertest1Password}}",
                   "type": "text"
                 }
               ]
@@ -731,18 +731,18 @@
           "response": []
         },
         {
-          "name": "14 - Login Bob In Keycloak",
+          "name": "14 - Login Usertest2 In Keycloak",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Keycloak returns 200 for Bob', function () {",
+                  "pm.test('Keycloak returns 200 for Usertest2', function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
                   "",
                   "const json = pm.response.json();",
-                  "pm.environment.set('bobAccessToken', json.access_token);",
+                  "pm.environment.set('usertest2AccessToken', json.access_token);",
                   "",
                   "function decodeJwtPayload(token) {",
                   "    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
@@ -751,12 +751,12 @@
                   "}",
                   "",
                   "const claims = decodeJwtPayload(json.access_token);",
-                  "pm.environment.set('bobUserId', claims.sub);",
+                  "pm.environment.set('usertest2UserId', claims.sub);",
                   "",
-                  "pm.test('Bob access token has required claims for the API', function () {",
+                  "pm.test('Usertest2 access token has required claims for the API', function () {",
                   "    const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];",
                   "    pm.expect(claims.sub).to.be.a('string').and.not.empty;",
-                  "    pm.expect(claims.email).to.eql(pm.environment.get('bobEmail'));",
+                  "    pm.expect(claims.email).to.eql(pm.environment.get('usertest2Email'));",
                   "    pm.expect(claims.iss).to.eql(pm.environment.get('keycloakBaseUrl') + '/realms/fiapx');",
                   "    pm.expect(aud).to.include(pm.environment.get('jwtAudience'));",
                   "    pm.expect(claims.exp).to.be.a('number');",
@@ -792,12 +792,12 @@
                 },
                 {
                   "key": "username",
-                  "value": "{{bobUsername}}",
+                  "value": "{{usertest2Username}}",
                   "type": "text"
                 },
                 {
                   "key": "password",
-                  "value": "{{bobPassword}}",
+                  "value": "{{usertest2Password}}",
                   "type": "text"
                 }
               ]
@@ -819,24 +819,24 @@
           "response": []
         },
         {
-          "name": "15 - Bob List Does Not Include Alice Video",
+          "name": "15 - Usertest2 List Does Not Include Usertest1 Video",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Bob list returns 200', function () {",
+                  "pm.test('Usertest2 list returns 200', function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
                   "",
                   "const videos = pm.response.json();",
-                  "const aliceVideoId = pm.environment.get('videoId');",
-                  "const bobUserId = pm.environment.get('bobUserId');",
+                  "const usertest1VideoId = pm.environment.get('videoId');",
+                  "const usertest2UserId = pm.environment.get('usertest2UserId');",
                   "",
-                  "pm.test('Bob list does not reveal Alice video', function () {",
+                  "pm.test('Usertest2 list does not reveal Usertest1 video', function () {",
                   "    pm.expect(videos).to.be.an('array');",
-                  "    pm.expect(videos.some(v => v.videoId === aliceVideoId)).to.eql(false);",
-                  "    pm.expect(videos.every(v => v.userId === bobUserId)).to.eql(true);",
+                  "    pm.expect(videos.some(v => v.videoId === usertest1VideoId)).to.eql(false);",
+                  "    pm.expect(videos.every(v => v.userId === usertest2UserId)).to.eql(true);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -849,7 +849,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{bobAccessToken}}",
+                  "value": "{{usertest2AccessToken}}",
                   "type": "string"
                 }
               ]
@@ -869,13 +869,13 @@
           "response": []
         },
         {
-          "name": "16 - Bob Get Alice Video Returns 404",
+          "name": "16 - Usertest2 Get Usertest1 Video Returns 404",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Bob cross-user detail returns 404', function () {",
+                  "pm.test('Usertest2 cross-user detail returns 404', function () {",
                   "    pm.response.to.have.status(404);",
                   "});",
                   "",
@@ -894,7 +894,7 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{bobAccessToken}}",
+                  "value": "{{usertest2AccessToken}}",
                   "type": "string"
                 }
               ]
