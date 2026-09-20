@@ -24,6 +24,13 @@ API HTTP da solução FiapX para autenticar requisições, registrar vídeos, ge
 
 ---
 
+## Documentação e apresentação
+
+- [Acessar documentação completa](https://fabianorodrigues.github.io/fiap-fase5-docs/)
+- [Assistir vídeo de apresentação](https://youtu.be/EvCfwoXaBsc)
+
+---
+
 ## Visão geral
 
 Este repositório implementa a API da solução FiapX. Ela é a entrada HTTP para o usuário final e mantém a fonte de verdade dos metadados do vídeo.
